@@ -380,17 +380,23 @@ function brandforge_ClientArea(array $params): array
         $ssoError = $e->getMessage();
     }
 
-    // Fetch live usage data from Godmode (credits + package limits only).
-    // Workspace data lives in Ironman and is not accessible server-to-server
-    // from the WHMCS plugin — users manage workspaces inside the BrandForge app.
+    // Fetch live usage data from Godmode.
+    // Godmode returns: { package, credits, workspaces: { total, active, list: [...] } }
     $serviceInfo      = null;
     $creditsData      = [];
     $workspacesMax    = 0;
+    $workspacesActive = 0;
+    $workspacesList   = [];
     try {
-        $raw         = $client->getServiceInfo((string) $service->godmode_service_id);
-        $serviceInfo = $raw['data'] ?? $raw;
-        $creditsData = $serviceInfo['credits'] ?? [];
-        $workspacesMax = (int) (($serviceInfo['package'] ?? [])['max_workspaces'] ?? 0);
+        $raw            = $client->getServiceInfo((string) $service->godmode_service_id);
+        $serviceInfo    = $raw['data'] ?? $raw;
+        $creditsData    = $serviceInfo['credits']  ?? [];
+        $workspacesMax  = (int) (($serviceInfo['package'] ?? [])['max_workspaces'] ?? 0);
+        $wsData         = $serviceInfo['workspaces'] ?? [];
+        // Godmode returns workspaces as an object: { total, active, list: [...] }
+        $workspacesList   = $wsData['list']   ?? (array_values(array_filter($wsData, 'is_array')) ?: []);
+        // Use list count as fallback — Godmode may return active:0 while list is non-empty
+        $workspacesActive = (int) ($wsData['active'] ?: count($workspacesList));
     } catch (\Exception $e) {
         // Silently degrade — dashboard shows without live usage data.
     }
@@ -402,20 +408,22 @@ function brandforge_ClientArea(array $params): array
     $creditsOverLimit = !empty($creditsData['over_limit']);
 
     $vars = array_merge($vars, [
-        'has_service'       => true,
-        'package_name'      => $packageName,
-        'subscription_id'   => (string) ($service->godmode_service_id   ?? ''),
-        'workspace_id'      => (string) ($service->godmode_workspace_id  ?? ''),
-        'sso_url'           => $ssoUrl,
-        'sso_error'         => $ssoError,
-        'created_at'        => (string) ($service->created_at ?? ''),
-        'has_usage_data'    => ($serviceInfo !== null),
-        'credits_allocated' => $creditsAllocated,
-        'credits_used'      => $creditsUsed,
-        'credits_remaining' => $creditsRemaining,
-        'credits_period_end'=> $creditsPeriodEnd,
-        'credits_over_limit'=> $creditsOverLimit,
-        'workspaces_max'    => $workspacesMax,
+        'has_service'        => true,
+        'package_name'       => $packageName,
+        'subscription_id'    => (string) ($service->godmode_service_id   ?? ''),
+        'workspace_id'       => (string) ($service->godmode_workspace_id  ?? ''),
+        'sso_url'            => $ssoUrl,
+        'sso_error'          => $ssoError,
+        'created_at'         => (string) ($service->created_at ?? ''),
+        'has_usage_data'     => ($serviceInfo !== null),
+        'credits_allocated'  => $creditsAllocated,
+        'credits_used'       => $creditsUsed,
+        'credits_remaining'  => $creditsRemaining,
+        'credits_period_end' => $creditsPeriodEnd,
+        'credits_over_limit' => $creditsOverLimit,
+        'workspaces_max'     => $workspacesMax,
+        'workspaces_active'  => $workspacesActive,
+        'workspaces'         => $workspacesList,
     ]);
 
     return ['templatefile' => 'clientarea', 'vars' => $vars];

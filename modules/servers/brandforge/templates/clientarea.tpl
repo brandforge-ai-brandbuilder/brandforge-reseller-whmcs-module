@@ -19,6 +19,8 @@
     credits_period_end  string  (YYYY-MM-DD)
     credits_over_limit  bool
     workspaces_max      int     (0 = unknown; from package plan via Godmode)
+    workspaces_active   int     (count of active workspaces from Godmode status)
+    workspaces          array   (list of workspace objects: {id, name, slug, status}; empty until Godmode bundles Ironman names)
 *}
 
 {assign var="bf_primary"   value=$brand_color|default:'#6366f1'}
@@ -253,6 +255,43 @@
 }
 .bf-usage-meta strong { color: #374151; font-weight: 600; }
 
+/* Workspace list inside usage block */
+.bf-ws-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.bf-ws-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #374151;
+}
+.bf-ws-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px #10b98120;
+}
+.bf-ws-dot--inactive { background: #d1d5db; box-shadow: none; }
+.bf-ws-name { flex: 1; font-weight: 500; }
+.bf-ws-pill {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+  background: #ecfdf5;
+  color: #059669;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+.bf-ws-pill--inactive { background: #f3f4f6; color: #9ca3af; }
+
 
 /* ── Alert / error states ─────────────────────────────── */
 .bf-alert {
@@ -390,23 +429,43 @@
     </div>
     {/if}
 
-    {* Workspaces block — count from package plan; full list is inside the app *}
+    {* Workspaces block — count from Godmode; list when Godmode bundles Ironman names *}
     <div class="bf-usage-block">
       <div class="bf-usage-header">
         <span class="bf-usage-title">Workspaces</span>
         {if $workspaces_max gt 0}
-          <span class="bf-usage-count">Up to {$workspaces_max} included</span>
+          <span class="bf-usage-count{if $workspaces_active gte $workspaces_max} bf-usage-count--warn{/if}">
+            {$workspaces_active} / {$workspaces_max} used
+          </span>
+        {elseif $workspaces_active gt 0}
+          <span class="bf-usage-count">{$workspaces_active} active</span>
         {/if}
       </div>
-      <div style="font-size:12.5px;color:#6b7280;line-height:1.55;">
-        Workspace details and brand projects are managed inside {$bf_name|escape}.
-        {if $sso_url}
-          <a href="{$sso_url|escape}" target="_blank" rel="noopener noreferrer"
-             style="color:{$bf_primary};font-weight:600;text-decoration:none;">
-            Open app →
-          </a>
-        {/if}
-      </div>
+
+      {if $workspaces|@count gt 0}
+        <ul class="bf-ws-list">
+          {foreach from=$workspaces item=ws}
+          {assign var="ws_inactive" value=($ws.active eq false)}
+          <li class="bf-ws-item">
+            <span class="bf-ws-dot{if $ws_inactive} bf-ws-dot--inactive{/if}"></span>
+            <span class="bf-ws-name">{$ws.name|default:'Untitled'|escape}</span>
+            <span class="bf-ws-pill{if $ws_inactive} bf-ws-pill--inactive{/if}">
+              {if $ws_inactive}inactive{else}active{/if}
+            </span>
+          </li>
+          {/foreach}
+        </ul>
+      {else}
+        <div style="font-size:12.5px;color:#6b7280;line-height:1.55;">
+          Workspace details and brand projects are managed inside {$bf_name|escape}.
+          {if $sso_url}
+            <a href="{$sso_url|escape}" target="_blank" rel="noopener noreferrer"
+               style="color:{$bf_primary};font-weight:600;text-decoration:none;">
+              Open app →
+            </a>
+          {/if}
+        </div>
+      {/if}
     </div>
 
   </div>
