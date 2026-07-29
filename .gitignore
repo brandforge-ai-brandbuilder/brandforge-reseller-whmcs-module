@@ -1,0 +1,35 @@
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.p12
+
+# WHMCS config (if testing locally inside a WHMCS install)
+configuration.php
+
+# Composer
+vendor/
+composer.lock
+
+# PHP tooling
+.phpunit.result.cache
+.php-cs-fixer.cache
+.phpcs.cache
+
+# IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test output
+coverage/
+.phpunit.cache/
