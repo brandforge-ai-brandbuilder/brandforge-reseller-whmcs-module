@@ -111,7 +111,7 @@ function brandforge_ConfigOptions(): array
         'Godmode API URL' => [
             'Type'        => 'text',
             'Size'        => 60,
-            'Default'     => 'https://brandforge.software',
+            'Default'     => 'https://staging.brandforge.software',
             'Description' => 'Base URL for the Godmode API (no trailing slash)',
         ],
         'Godmode API Key' => [
