@@ -1,6 +1,6 @@
 # BrandForge Reseller WHMCS Module
 
-WHMCS provisioning and addon module that connects WHMCS product lifecycle events to the [BrandForge](https://brandforge.com) Godmode API — automating workspace provisioning, suspension, termination, package upgrades, SSO login, and client area dashboards for resellers and their customers.
+WHMCS provisioning and addon module that connects WHMCS product lifecycle events to the [BrandForge](https://brandforge.software) Godmode API — automating workspace provisioning, suspension, termination, package upgrades, SSO login, and client area dashboards for resellers and their customers.
 
 ---
 
@@ -37,7 +37,7 @@ WHMCS provisioning and addon module that connects WHMCS product lifecycle events
 
 2. **Activate the Addon module**
    `Admin → Setup → Addon Modules → BrandForge Package Sync → Activate → Configure`
-   - Godmode API URL: `https://brandforge.com`
+   - Godmode API URL: `https://brandforge.software`
    - Godmode API Key: your bearer token
    - Access Control: tick your admin role
    - Click **Save Changes**
@@ -64,7 +64,7 @@ WHMCS provisioning and addon module that connects WHMCS product lifecycle events
 3. **Add a Server record**
    `Admin → Setup → Servers → Add Server`
    - Module: `BrandForge`
-   - Hostname: `https://brandforge.com`
+   - Hostname: `https://brandforge.software`
    - Password: your Godmode API Key
    - Click **Test Connection** to verify
 
@@ -86,7 +86,7 @@ Set per-product under `Admin → Products/Services → [Product] → Module Sett
 
 | Option | Description | Default |
 |---|---|---|
-| Godmode API URL | Base URL for the Godmode API (no trailing slash) | `https://brandforge.com` |
+| Godmode API URL | Base URL for the Godmode API (no trailing slash) | `https://brandforge.software` |
 | Godmode API Key | Bearer token for authentication | — |
 | Debug Mode | Log all API calls to the WHMCS Module Log | Off |
 | Brand Name | Label shown in the client area (white-label branding) | `BrandForge` |
