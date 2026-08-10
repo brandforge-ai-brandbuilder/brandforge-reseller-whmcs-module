@@ -2,7 +2,9 @@
   BrandForge — SSO Redirect Page
   Vars: sso_url (string), sso_error (string), brand_name (string)
 *}
-{assign var="bf_name" value=$brand_name|default:'BrandForge'}
+{assign var="bf_name"    value=$brand_name|default:'BrandForge'}
+{assign var="bf_primary" value=$brand_color|default:'#6366f1'}
+{assign var="bf_accent"  value=$brand_accent|default:$bf_primary}
 
 <style>
 .bf-redirect-wrap {
@@ -37,13 +39,13 @@
 .bf-redirect-link {
   display: inline-block;
   padding: 11px 28px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, {$bf_primary}, {$bf_accent});
   color: #fff;
   font-size: 14px;
   font-weight: 600;
   border-radius: 8px;
   text-decoration: none;
-  box-shadow: 0 4px 14px #6366f140;
+  box-shadow: 0 4px 14px {$bf_primary}40;
   transition: opacity .15s;
 }
 .bf-redirect-link:hover { opacity:.88; color:#fff; text-decoration:none; }
@@ -83,7 +85,7 @@
   text-decoration: none;
   transition: border-color .15s, color .15s;
 }
-.bf-btn-back:hover { border-color:#6366f1; color:#6366f1; text-decoration:none; }
+.bf-btn-back:hover { border-color:{$bf_primary}; color:{$bf_primary}; text-decoration:none; }
 </style>
 
 {if $sso_url}
