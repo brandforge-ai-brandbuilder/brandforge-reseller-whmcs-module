@@ -469,13 +469,16 @@ function brandforge_doSso(array $params, string $returnPath = ''): array
     $error     = '';
     $service   = brandforge_loadService($serviceId, $error);
 
-    $brandName = $params['configoption4'] ?? 'BrandForge';
+    $brandName  = trim((string) ($params['configoption4'] ?? '')) ?: 'BrandForge';
+    $brandColor = trim((string) ($params['configoption5'] ?? '')) ?: '#6366f1';
+    $brandAccent = trim((string) ($params['configoption7'] ?? '')) ?: $brandColor;
+
+    $baseVars = ['brand_name' => $brandName, 'brand_color' => $brandColor, 'brand_accent' => $brandAccent];
 
     if ($service === null) {
         return [
             'templatefile' => 'sso_redirect',
-            'vars'         => ['sso_url' => '', 'sso_error' => $error,
-                               'brand_name' => $brandName],
+            'vars'         => array_merge($baseVars, ['sso_url' => '', 'sso_error' => $error]),
         ];
     }
 
@@ -490,14 +493,12 @@ function brandforge_doSso(array $params, string $returnPath = ''): array
 
         return [
             'templatefile' => 'sso_redirect',
-            'vars'         => ['sso_url' => $url, 'sso_error' => '',
-                               'brand_name' => $brandName],
+            'vars'         => array_merge($baseVars, ['sso_url' => $url, 'sso_error' => '']),
         ];
     } catch (\Exception $e) {
         return [
             'templatefile' => 'sso_redirect',
-            'vars'         => ['sso_url' => '', 'sso_error' => $e->getMessage(),
-                               'brand_name' => $brandName],
+            'vars'         => array_merge($baseVars, ['sso_url' => '', 'sso_error' => $e->getMessage()]),
         ];
     }
 }
