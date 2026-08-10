@@ -113,8 +113,11 @@ class GodmodeClient
             CURLOPT_TIMEOUT        => self::TIMEOUT_SECONDS,
             CURLOPT_CONNECTTIMEOUT => self::CONNECT_TIMEOUT,
             CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_SSL_VERIFYPEER    => true,
+            CURLOPT_SSL_VERIFYHOST    => 2,
+            CURLOPT_FOLLOWLOCATION    => true,  // follow http→https / non-www→www redirects
+            CURLOPT_MAXREDIRS         => 5,
+            CURLOPT_UNRESTRICTED_AUTH => true,  // keep Authorization header through redirects
         ]);
 
         if ($method === 'POST') {

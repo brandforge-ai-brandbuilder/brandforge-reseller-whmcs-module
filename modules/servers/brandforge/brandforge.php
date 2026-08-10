@@ -50,6 +50,11 @@ function brandforge_buildClient(array $params): GodmodeClient
     $apiKey    = trim((string) ($params['configoption2'] ?? '')) ?: trim((string) ($params['serverpassword']  ?? ''));
     $debugMode = ($params['configoption3'] ?? 'no') === 'on';
 
+    // Server record stores bare hostname (e.g. brandforge.software); prepend https:// if missing.
+    if ($apiUrl !== '' && !preg_match('#^https?://#i', $apiUrl)) {
+        $apiUrl = 'https://' . $apiUrl;
+    }
+
     return new GodmodeClient($apiUrl, $apiKey, new Logger($debugMode));
 }
 
@@ -143,6 +148,13 @@ function brandforge_ConfigOptions(): array
             'Default'     => '',
             'Description' => 'Reseller branded app URL (e.g. https://app.yourdomain.com). '
                            . 'Leave blank to use the default BrandForge URL.',
+        ],
+        'Brand Accent Color' => [
+            'Type'        => 'text',
+            'Size'        => 10,
+            'Default'     => '',
+            'Description' => 'Gradient end color for buttons and header (hex, e.g. #8b5cf6). '
+                           . 'Leave blank to use Brand Primary Color as a solid (no gradient).',
         ],
     ];
 }
@@ -357,8 +369,10 @@ function brandforge_ClientArea(array $params): array
         'has_service'    => false,
         'service_status' => $params['status'] ?? 'Unknown',
         'service_id'     => $serviceId,
-        'brand_name'     => $params['configoption4'] ?? 'BrandForge',
-        'brand_color'    => $params['configoption5'] ?? '#6366f1',
+        'brand_name'            => $params['configoption4'] ?? 'BrandForge',
+        'brand_color'           => $params['configoption5'] ?? '#6366f1',
+        'brand_color_secondary' => trim((string) ($params['configoption7'] ?? ''))
+                                   ?: ($params['configoption5'] ?? '#6366f1'),
     ];
 
     if ($service === null) {
@@ -433,11 +447,12 @@ function brandforge_ClientArea(array $params): array
 // Custom button registry
 // ---------------------------------------------------------------------------
 
-function brandforge_ClientAreaCustomButtonArray(): array
+function brandforge_ClientAreaCustomButtonArray(array $params): array
 {
+    $brandName = trim((string) ($params['configoption4'] ?? '')) ?: 'BrandForge';
     return [
-        'Launch BrandForge' => 'LaunchBrandForge',
-        'View Workspace'    => 'ViewWorkspace',
+        'Launch ' . $brandName => 'LaunchBrandForge',
+        'View Workspace'       => 'ViewWorkspace',
     ];
 }
 

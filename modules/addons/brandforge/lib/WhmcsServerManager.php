@@ -44,16 +44,22 @@ class WhmcsServerManager
      */
     public static function createServer(string $apiUrl, string $apiKey, int $groupId): int
     {
+        // Store the bare hostname (no protocol) so WHMCS hostname validation passes
+        // and Test Connection on the server edit page works correctly.
+        $hostname = preg_replace('#^https?://#i', '', rtrim($apiUrl, '/'));
+
         $serverId = (int) Capsule::table('tblservers')->insertGetId([
             'name'        => 'BrandForge',
-            'ipaddress'   => $apiUrl,
-            'hostname'    => '',
+            'hostname'    => $hostname,
+            'ipaddress'   => '',
             'username'    => '',
             'password'    => encrypt($apiKey),
             'accesshash'  => '',
             'type'        => self::MODULE,
             'maxaccounts' => 0,
             'active'      => 1,
+            'secure'      => 1,    // always HTTPS
+            'port'        => 443,
             'nameserver1' => '',
             'nameserver2' => '',
             'nameserver3' => '',
@@ -79,9 +85,11 @@ class WhmcsServerManager
             ->toArray();
 
         if (!empty($ids)) {
-            Capsule::table('tblserversgroups')
-                ->whereIn('serverid', $ids)
-                ->delete();
+            if (Capsule::schema()->hasTable('tblserversgroups')) {
+                Capsule::table('tblserversgroups')
+                    ->whereIn('serverid', $ids)
+                    ->delete();
+            }
 
             Capsule::table('tblservers')
                 ->whereIn('id', $ids)
