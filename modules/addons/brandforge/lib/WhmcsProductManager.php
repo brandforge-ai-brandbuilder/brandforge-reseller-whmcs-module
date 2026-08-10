@@ -107,19 +107,19 @@ class WhmcsProductManager
 
     /**
      * Update the name of an existing WHMCS product.
+     * Uses Capsule directly — WHMCS has no UpdateProduct local API function.
      *
      * @throws \RuntimeException
      */
     public static function updateProductName(int $productId, string $name): void
     {
-        $result = localAPI('UpdateProduct', [
-            'pid'  => $productId,
-            'name' => $name,
-        ]);
+        $updated = Capsule::table('tblproducts')
+            ->where('id', $productId)
+            ->update(['name' => $name]);
 
-        if (($result['result'] ?? '') !== 'success') {
+        if ($updated === 0) {
             throw new \RuntimeException(
-                "UpdateProduct #{$productId} failed: " . ($result['message'] ?? 'unknown error')
+                "UpdateProduct #{$productId} failed: product not found in tblproducts"
             );
         }
     }
