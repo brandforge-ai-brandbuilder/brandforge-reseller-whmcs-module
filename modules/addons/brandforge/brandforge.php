@@ -442,6 +442,61 @@ function brandforge_renderPage(
         .bf-next     { background:#f0fdf4; border:1px solid #bbf7d0; border-radius:4px;
                        padding:14px 18px; margin-bottom:20px; font-size:13px; }
         .bf-next strong { color:#15803d; }
+
+        /* ---- loading overlay ---- */
+        #bf-overlay {
+            display:none; position:fixed; inset:0; z-index:99999;
+            background:rgba(15,15,35,.72); backdrop-filter:blur(3px);
+            align-items:center; justify-content:center;
+        }
+        .bf-overlay-box {
+            background:#fff; border-radius:10px; padding:36px 44px;
+            max-width:420px; width:90%; text-align:center;
+            box-shadow:0 20px 60px rgba(0,0,0,.35);
+        }
+        .bf-spinner {
+            width:52px; height:52px; border-radius:50%;
+            border:4px solid #e0e0f0; border-top-color:#6366f1;
+            animation:bf-spin .8s linear infinite; margin:0 auto 20px;
+        }
+        @keyframes bf-spin { to { transform:rotate(360deg); } }
+        .bf-overlay-title {
+            font-size:17px; font-weight:700; color:#111; margin-bottom:6px;
+        }
+        .bf-overlay-sub {
+            font-size:13px; color:#6b7280; margin-bottom:22px; line-height:1.5;
+        }
+        .bf-steps { list-style:none; margin:0; padding:0; text-align:left; }
+        .bf-steps li {
+            font-size:13px; color:#6b7280; padding:5px 0;
+            display:flex; align-items:center; gap:9px;
+            opacity:0; transform:translateY(6px);
+            animation:bf-fadein .4s ease forwards;
+        }
+        .bf-steps li:nth-child(1) { animation-delay:.3s; }
+        .bf-steps li:nth-child(2) { animation-delay:1.2s; }
+        .bf-steps li:nth-child(3) { animation-delay:2.4s; }
+        .bf-steps li:nth-child(4) { animation-delay:3.8s; }
+        @keyframes bf-fadein {
+            to { opacity:1; transform:translateY(0); }
+        }
+        .bf-step-icon {
+            width:20px; height:20px; border-radius:50%; flex-shrink:0;
+            border:2px solid #c7d2fe; border-top-color:#6366f1;
+            animation:bf-spin .9s linear infinite;
+        }
+        .bf-overlay-note {
+            margin-top:20px; font-size:11.5px; color:#9ca3af;
+        }
+        /* simple spinner for other buttons */
+        .bf-btn-loading { position:relative; pointer-events:none; opacity:.75; }
+        .bf-btn-loading::after {
+            content:''; position:absolute; right:-22px; top:50%;
+            transform:translateY(-50%);
+            width:14px; height:14px; border-radius:50%;
+            border:2px solid rgba(255,255,255,.4); border-top-color:#fff;
+            animation:bf-spin .7s linear infinite;
+        }
     </style>
 
     <div class="bf-wrap">
@@ -454,7 +509,8 @@ function brandforge_renderPage(
                 <form method="post" action="<?= $mlHtml ?>" style="display:inline">
                     <input type="hidden" name="token"  value="<?= $tkHtml ?>">
                     <input type="hidden" name="action" value="sync_all">
-                    <button type="submit" class="btn btn-primary btn-sm">
+                    <button type="submit" class="btn btn-primary btn-sm bf-async-btn"
+                            data-loading-text="Syncing&hellip;">
                         <i class="fas fa-sync-alt"></i>&nbsp; Sync Packages
                     </button>
                 </form>
@@ -462,7 +518,8 @@ function brandforge_renderPage(
                 <form method="post" action="<?= $mlHtml ?>" style="display:inline">
                     <input type="hidden" name="token"  value="<?= $tkHtml ?>">
                     <input type="hidden" name="action" value="setup_all_products">
-                    <button type="submit" class="btn btn-success btn-sm">
+                    <button type="submit" class="btn btn-success btn-sm bf-async-btn"
+                            data-loading-text="Creating&hellip;">
                         <i class="fas fa-magic"></i>&nbsp; Create All Products
                     </button>
                 </form>
@@ -533,11 +590,10 @@ function brandforge_renderPage(
                 </p>
                 <button class="btn-setup" disabled>Setup Unavailable &mdash; Save Credentials First</button>
             <?php else: ?>
-                <form method="post" action="<?= $mlHtml ?>">
+                <form id="bf-setup-form" method="post" action="<?= $mlHtml ?>">
                     <input type="hidden" name="token"  value="<?= $tkHtml ?>">
                     <input type="hidden" name="action" value="auto_setup">
-                    <button type="submit" class="btn-setup"
-                            onclick="return confirm('This will create a server record, sync packages, and auto-create WHMCS products. Ready to go?')">
+                    <button type="submit" class="btn-setup">
                         &#x1F680; Run One-Click Setup
                     </button>
                 </form>
@@ -683,5 +739,49 @@ function brandforge_renderPage(
         <?php endif; ?>
 
     </div>
+
+    <!-- Loading overlay (One-Click Setup) -->
+    <div id="bf-overlay">
+        <div class="bf-overlay-box">
+            <div class="bf-spinner"></div>
+            <div class="bf-overlay-title">Setting up BrandForge&hellip;</div>
+            <div class="bf-overlay-sub">This takes about 10&ndash;30 seconds. Please do not close this page.</div>
+            <ul class="bf-steps">
+                <li><span class="bf-step-icon"></span> Connecting to Godmode API</li>
+                <li><span class="bf-step-icon"></span> Creating server record</li>
+                <li><span class="bf-step-icon"></span> Syncing packages from Godmode</li>
+                <li><span class="bf-step-icon"></span> Creating WHMCS products</li>
+            </ul>
+            <p class="bf-overlay-note">You will be redirected automatically when setup completes.</p>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        var overlay = document.getElementById('bf-overlay');
+
+        // One-Click Setup: show full overlay with steps
+        var setupForm = document.getElementById('bf-setup-form');
+        if (setupForm) {
+            setupForm.addEventListener('submit', function (e) {
+                e.preventDefault();
+                if (!confirm('This will create a server record, sync packages, and auto-create WHMCS products. Ready to go?')) {
+                    return;
+                }
+                overlay.style.display = 'flex';
+                setupForm.submit();
+            });
+        }
+
+        // Sync Packages / Create All Products: simple button spinner
+        document.querySelectorAll('.bf-async-btn').forEach(function (btn) {
+            btn.closest('form').addEventListener('submit', function () {
+                btn.classList.add('bf-btn-loading');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>&nbsp; ' + btn.getAttribute('data-loading-text');
+            });
+        });
+    }());
+    </script>
     <?php
 }
