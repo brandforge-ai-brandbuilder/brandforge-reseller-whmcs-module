@@ -118,9 +118,15 @@ class WhmcsProductManager
             ->update(['name' => $name]);
 
         if ($updated === 0) {
-            throw new \RuntimeException(
-                "UpdateProduct #{$productId} failed: product not found in tblproducts"
-            );
+            // Capsule returns rows *changed*, not rows *matched*.
+            // 0 can mean the product doesn't exist OR the name was already current.
+            // Only throw when the product is genuinely absent.
+            $exists = Capsule::table('tblproducts')->where('id', $productId)->exists();
+            if (!$exists) {
+                throw new \RuntimeException(
+                    "UpdateProduct #{$productId} failed: product not found in tblproducts"
+                );
+            }
         }
     }
 
