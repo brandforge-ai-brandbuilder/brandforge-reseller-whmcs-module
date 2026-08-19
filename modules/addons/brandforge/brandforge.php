@@ -639,8 +639,9 @@ function brandforge_renderPage(
                 <thead>
                     <tr>
                         <th>Package Name</th>
-                        <th>Slug</th>
+                        <th>Plan ID <small class="text-muted">(for Godmode)</small></th>
                         <th>Godmode ID</th>
+                        <th>Product ID <small class="text-muted">(for Godmode)</small></th>
                         <th>WHMCS Product</th>
                         <th>Status</th>
                         <th>Actions</th>
@@ -659,6 +660,13 @@ function brandforge_renderPage(
                         <td><strong><?= htmlspecialchars($row->godmode_name) ?></strong></td>
                         <td><code><?= htmlspecialchars($row->godmode_slug) ?></code></td>
                         <td><small class="text-muted"><?= $gid ?></small></td>
+                        <td>
+                            <?php if ($isLinked): ?>
+                                <code><?= (int) $row->whmcs_product_id ?></code>
+                            <?php else: ?>
+                                <span class="text-muted">&mdash;</span>
+                            <?php endif; ?>
+                        </td>
                         <td>
                             <?php if ($isLinked): ?>
                                 <span class="label label-success"><?= $productLabel ?></span>
