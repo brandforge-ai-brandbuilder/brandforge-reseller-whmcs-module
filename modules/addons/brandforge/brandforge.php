@@ -237,8 +237,9 @@ function brandforge_output(array $vars): void
                         ServiceRepository::ensureTable();
                         // Server records are separate — delete after tables are safe.
                         WhmcsServerManager::deleteAll();
-                        $flash     = 'Reset complete. All data cleared and tables recreated. '
-                                   . 'Run One-Click Setup to start fresh.';
+                        $flash     = 'Reset complete. Mapping tables cleared and server record removed. '
+                                   . 'Your WHMCS products were kept — run One-Click Setup to re-link them '
+                                   . '(no duplicates will be created).';
                         $flashType = 'success';
                         break;
 
@@ -265,7 +266,11 @@ function brandforge_output(array $vars): void
 
                     case 'rebuild_mapping':
                         $result    = $sync->rebuildMapping();
-                        $flash     = "Mapping rebuilt — {$result['synced']} package(s) processed.";
+                        $flash     = "Mapping rebuilt — {$result['synced']} package(s) synced";
+                        if (($result['reconnected'] ?? 0) > 0) {
+                            $flash .= ", {$result['reconnected']} existing product(s) re-linked";
+                        }
+                        $flash    .= '.';
                         $flashType = 'success';
                         break;
 
@@ -528,7 +533,7 @@ function brandforge_renderPage(
                     <input type="hidden" name="token"  value="<?= $tkHtml ?>">
                     <input type="hidden" name="action" value="reset_all">
                     <button type="submit" class="btn btn-danger btn-sm"
-                            onclick="return confirm('This will delete all mapping data, remove the server record, and start fresh. Are you sure?')">
+                            onclick="return confirm('This clears all package/service mapping data and removes the server record.\n\nYour WHMCS products are kept — re-running setup will re-link them without creating duplicates.\n\nContinue?')">
                         <i class="fas fa-trash"></i>&nbsp; Reset Everything
                     </button>
                 </form>
