@@ -33,13 +33,20 @@ class WhmcsProductManager
 
     /**
      * Create a WHMCS product bound to the BrandForge server module.
-     * Returns the new product ID.
+     * If a product with the same name already exists in the BrandForge group,
+     * it is returned as-is (find-or-create, prevents duplicates on re-sync).
+     * Returns the product ID.
      *
      * @throws \RuntimeException
      */
     public static function createProduct(string $name, string $slug): int
     {
         $gid = self::getOrCreateGroup();
+
+        $existing = self::findProductInGroup($name, $gid);
+        if ($existing !== null) {
+            return $existing;
+        }
 
         $result = localAPI('AddProduct', [
             'name'        => $name,
@@ -65,6 +72,11 @@ class WhmcsProductManager
      * module config options set automatically. Used by One-Click Setup so the
      * reseller does not need to configure each product manually.
      *
+     * If a product with the same name already exists in the BrandForge group
+     * it is reused and its configoptions are refreshed (find-or-create).
+     * This makes One-Click Setup / Create All Products idempotent — running it
+     * after a Reset or a re-sync never creates duplicates.
+     *
      * @throws \RuntimeException
      */
     public static function createProductFull(
@@ -74,6 +86,17 @@ class WhmcsProductManager
         string $apiKey
     ): int {
         $gid = self::getOrCreateGroup();
+
+        // Return existing product if one with this name is already in the group.
+        $existing = self::findProductInGroup($name, $gid);
+        if ($existing !== null) {
+            // Refresh configoptions so credentials stay in sync.
+            Capsule::table('tblproducts')->where('id', $existing)->update([
+                'configoption1' => $apiUrl,
+                'configoption2' => $apiKey,
+            ]);
+            return $existing;
+        }
 
         $result = localAPI('AddProduct', [
             'name'       => $name,
@@ -106,6 +129,22 @@ class WhmcsProductManager
     }
 
     /**
+     * Find an existing product by name within the BrandForge product group.
+     * Returns the product ID, or null if none exists.
+     * Used to prevent duplicate products when setup is run more than once.
+     */
+    public static function findProductInGroup(string $name, int $gid): ?int
+    {
+        $row = Capsule::table('tblproducts')
+            ->where('gid', $gid)
+            ->where('name', $name)
+            ->select('id')
+            ->first();
+
+        return $row ? (int) $row->id : null;
+    }
+
+    /**
      * Update the name of an existing WHMCS product.
      * Uses Capsule directly — WHMCS has no UpdateProduct local API function.
      *
@@ -131,6 +170,15 @@ class WhmcsProductManager
     }
 
     // -----------------------------------------------------------------------
+
+    /**
+     * Public wrapper so PackageSync can resolve the group ID without duplicating
+     * the find-or-create logic.
+     */
+    public static function getOrCreateGroupPublic(): int
+    {
+        return self::getOrCreateGroup();
+    }
 
     private static function getOrCreateGroup(): int
     {

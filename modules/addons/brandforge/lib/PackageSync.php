@@ -62,12 +62,33 @@ class PackageSync
     }
 
     /**
-     * Full rebuild: equivalent to syncAll() but semantically signals intent
-     * to reconcile the entire mapping table from scratch.
+     * Full rebuild: sync packages from Godmode, then auto-reconnect any existing
+     * WHMCS products in the BrandForge group that lost their mapping (e.g. after
+     * a Reset Everything).  Returns ['synced' => int, 'reconnected' => int, 'errors' => string[]].
      */
     public function rebuildMapping(): array
     {
-        return $this->syncAll();
+        $result = $this->syncAll();
+        $result['reconnected'] = 0;
+
+        // After sync, re-link any unlinked packages to existing WHMCS products
+        // by matching on name — prevents duplicates if user re-runs setup.
+        $gid      = WhmcsProductManager::getOrCreateGroupPublic();
+        $mappings = PackageRepository::all();
+
+        foreach ($mappings as $m) {
+            if (!empty($m->whmcs_product_id)) {
+                continue; // already linked
+            }
+
+            $existingId = WhmcsProductManager::findProductInGroup($m->godmode_name, $gid);
+            if ($existingId !== null) {
+                PackageRepository::setWhmcsProduct($m->godmode_package_id, $existingId);
+                $result['reconnected']++;
+            }
+        }
+
+        return $result;
     }
 
     // -----------------------------------------------------------------------
