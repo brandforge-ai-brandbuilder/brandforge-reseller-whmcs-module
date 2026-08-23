@@ -54,4 +54,27 @@ class Mapper
             'plan_code'  => $planCode,
         ];
     }
+
+    /**
+     * POST /api/godmode/v1/provision/add_plan
+     * POST /api/godmode/v1/provision/suspend_plan   (Phase 2)
+     * POST /api/godmode/v1/provision/unsuspend_plan (Phase 2)
+     * POST /api/godmode/v1/provision/terminate_plan (Phase 2/3)
+     *
+     * All four take the identical shape — one specific plan on an existing
+     * account — so one builder covers every plan-scoped call the module
+     * makes after a customer's first package.
+     *
+     * @param string $godmodeServiceId  The ACCOUNT's service_id — shared by
+     *                                  every package a customer holds, not
+     *                                  specific to any one WHMCS service row.
+     * @param string $planCode          The one plan_code this call acts on.
+     */
+    public static function planPayload(string $godmodeServiceId, string $planCode): array
+    {
+        return [
+            'service_id' => $godmodeServiceId,
+            'plan_code'  => $planCode,
+        ];
+    }
 }

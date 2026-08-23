@@ -75,6 +75,17 @@ function brandforge_resolvePlanCode(int $whmcsProductId, string &$error): ?strin
 }
 
 /**
+ * Shared error text for "this service's plan_code can't be resolved
+ * anymore" — happens if a product gets unlinked in Package Sync after a
+ * customer already has an active service on it.
+ */
+function brandforge_unlinkedProductError(int $whmcsProductId): string
+{
+    return 'Cannot resolve the Godmode plan for WHMCS product #' . $whmcsProductId . '. '
+         . 'It may have been unlinked in Package Sync since this service was provisioned.';
+}
+
+/**
  * Load the service record for a WHMCS service ID.
  * Returns null and populates $error when no record exists.
  */
@@ -193,7 +204,32 @@ function brandforge_CreateAccount(array $params): string
             return $error;
         }
 
-        $client  = brandforge_buildClient($params);
+        $clientId = (int) (
+            $params['clientsdetails']['id']
+            ?? $params['clientsdetails']['userid']
+            ?? $params['userid']
+            ?? 0
+        );
+        $client = brandforge_buildClient($params);
+
+        // Every package after this client's first attaches to the account
+        // that already exists, instead of trying (and silently failing) to
+        // create a second one. No per-product "is this an add-on" setting —
+        // every package behaves the same way; which Godmode call fires is
+        // decided entirely by whether this client already has one.
+        $active = ServiceRepository::findActiveByClientId($clientId);
+
+        if (!empty($active)) {
+            return brandforge_addPlanToExistingAccount(
+                $params,
+                $client,
+                $clientId,
+                $whmcsProductId,
+                $planCode,
+                $active
+            );
+        }
+
         $payload = Mapper::createAccountPayload($params, $planCode);
 
         $response = $client->createAccount($payload);
@@ -210,7 +246,7 @@ function brandforge_CreateAccount(array $params): string
         }
 
         ServiceRepository::insert(
-            (int) ($params['clientsdetails']['id'] ?? $params['clientsdetails']['userid'] ?? $params['userid'] ?? 0),
+            $clientId,
             (int) ($params['serviceid'] ?? 0),
             $whmcsProductId,
             $godmodeServiceId,
@@ -225,6 +261,64 @@ function brandforge_CreateAccount(array $params): string
     } catch (\Exception $e) {
         return 'Unexpected error: ' . $e->getMessage();
     }
+}
+
+/**
+ * Attaches $planCode to the account this client already holds, via
+ * provision/add_plan — the "every package after the first" path.
+ *
+ * Guardrail: refuses to attach a plan_code the client already has active.
+ * add_plan has no dedup check on Godmode's side — without this, ordering
+ * the same package twice would grant its credits twice.
+ *
+ * @param \stdClass[] $activeSiblings  This client's current active packages,
+ *                                     from ServiceRepository::findActiveByClientId().
+ */
+function brandforge_addPlanToExistingAccount(
+    array         $params,
+    GodmodeClient $client,
+    int           $clientId,
+    int           $whmcsProductId,
+    string        $planCode,
+    array         $activeSiblings
+): string {
+    foreach ($activeSiblings as $sibling) {
+        $siblingPlanCode = PackageLookup::packageSlug((int) $sibling->whmcs_product_id);
+        if ($siblingPlanCode !== null && $siblingPlanCode === $planCode) {
+            return 'This client already has an active package for this plan. '
+                 . 'Ordering it again would grant duplicate credits — cancel the existing one first '
+                 . 'if the intent was to replace it.';
+        }
+    }
+
+    // Any sibling row identifies the same Godmode account — they all share
+    // one godmode_service_id. add_plan's response has no workspace_id/user_id
+    // (only provision/create returns those), so this reuses the account's
+    // existing values rather than leaving them blank.
+    $account = $activeSiblings[0];
+
+    $response = $client->addPlan(
+        Mapper::planPayload((string) $account->godmode_service_id, $planCode)
+    );
+
+    // Accept both a flat response and a {"data":{...}} envelope
+    $data             = $response['data'] ?? $response;
+    $godmodeServiceId = (string) ($data['service_id'] ?? $account->godmode_service_id ?? '');
+
+    if ($godmodeServiceId === '') {
+        return 'Plan add request sent but Godmode returned no service_id. Check the module log.';
+    }
+
+    ServiceRepository::insert(
+        $clientId,
+        (int) ($params['serviceid'] ?? 0),
+        $whmcsProductId,
+        $godmodeServiceId,
+        (string) ($account->godmode_workspace_id ?? ''),
+        (string) ($account->godmode_user_id ?? '')
+    );
+
+    return 'success';
 }
 
 // ---------------------------------------------------------------------------
@@ -242,9 +336,16 @@ function brandforge_SuspendAccount(array $params): string
             return $error;
         }
 
+        // Always plan-scoped — this WHMCS service is always exactly one
+        // specific package, whether or not the client holds others.
+        $planCode = PackageLookup::packageSlug((int) $service->whmcs_product_id);
+        if ($planCode === null) {
+            return brandforge_unlinkedProductError((int) $service->whmcs_product_id);
+        }
+
         $client = brandforge_buildClient($params);
-        $client->suspendAccount(
-            Mapper::servicePayload($service->godmode_service_id)
+        $client->suspendPlan(
+            Mapper::planPayload((string) $service->godmode_service_id, $planCode)
         );
 
         ServiceRepository::touch($serviceId);
@@ -272,9 +373,20 @@ function brandforge_UnsuspendAccount(array $params): string
             return $error;
         }
 
+        $planCode = PackageLookup::packageSlug((int) $service->whmcs_product_id);
+        if ($planCode === null) {
+            return brandforge_unlinkedProductError((int) $service->whmcs_product_id);
+        }
+
+        // Deliberately NEVER falls back to the account-level unsuspend, not
+        // even when this is the client's only package. Account-level
+        // unsuspend reactivates every currently-suspended plan on the
+        // account — if a client has two overdue packages and pays off just
+        // one, that call would silently reactivate the other, still-unpaid
+        // one too. Plan-scoped, always, no exceptions.
         $client = brandforge_buildClient($params);
-        $client->unsuspendAccount(
-            Mapper::servicePayload($service->godmode_service_id)
+        $client->unsuspendPlan(
+            Mapper::planPayload((string) $service->godmode_service_id, $planCode)
         );
 
         ServiceRepository::touch($serviceId);
@@ -302,13 +414,38 @@ function brandforge_TerminateAccount(array $params): string
             return $error;
         }
 
+        $planCode = PackageLookup::packageSlug((int) $service->whmcs_product_id);
+        if ($planCode === null) {
+            return brandforge_unlinkedProductError((int) $service->whmcs_product_id);
+        }
+
         $client = brandforge_buildClient($params);
-        $client->terminateAccount(
-            Mapper::servicePayload($service->godmode_service_id)
+        $client->terminatePlan(
+            Mapper::planPayload((string) $service->godmode_service_id, $planCode)
         );
 
-        // Record is kept as an audit trail — only the timestamp is updated.
-        ServiceRepository::touch($serviceId);
+        // Record is kept as an audit trail — terminated_at marks it done,
+        // the row itself is never deleted.
+        ServiceRepository::markTerminated($serviceId);
+
+        // Belt-and-suspenders, terminate only: if this was this client's
+        // last remaining package, also confirm the whole account closes out
+        // — this call is safe here specifically because nothing else is
+        // still active for it to affect, and it removes any dependency on
+        // trusting that terminate_plan alone fully derives account-level
+        // status. Deliberately best-effort: the plan itself is already
+        // correctly terminated above, so a failure here must not report
+        // this whole hook as failed. GodmodeClient logs every call itself,
+        // success or failure, so nothing is silently lost even if it errors.
+        $remaining = ServiceRepository::findActiveByClientId((int) $service->whmcs_client_id);
+        if (empty($remaining)) {
+            try {
+                $client->terminateAccount(Mapper::servicePayload((string) $service->godmode_service_id));
+            } catch (\Exception $e) {
+                // Intentionally swallowed — see comment above.
+            }
+        }
+
         return 'success';
 
     } catch (GodmodeApiException $e) {
@@ -333,17 +470,45 @@ function brandforge_ChangePackage(array $params): string
             return $error;
         }
 
-        $newProductId = (int) ($params['pid'] ?? 0);
-        $planCode     = brandforge_resolvePlanCode($newProductId, $error);
+        $oldPlanCode = PackageLookup::packageSlug((int) $service->whmcs_product_id);
+        if ($oldPlanCode === null) {
+            return brandforge_unlinkedProductError((int) $service->whmcs_product_id);
+        }
 
-        if ($planCode === null) {
+        $newProductId = (int) ($params['pid'] ?? 0);
+        $newPlanCode  = brandforge_resolvePlanCode($newProductId, $error);
+
+        if ($newPlanCode === null) {
             return $error;
         }
 
-        $client = brandforge_buildClient($params);
-        $client->changePackage(
-            Mapper::changePackagePayload($service->godmode_service_id, $planCode)
-        );
+        if ($newPlanCode === $oldPlanCode) {
+            // Two WHMCS products (e.g. monthly vs. annual billing of the
+            // same tier) mapped to the same Godmode plan — nothing to swap
+            // on Godmode's side, just re-point the local mapping. Skipping
+            // this check would call addPlan on a plan_code already active
+            // (Godmode has no dedup guard for that) and then immediately
+            // terminate one copy of it, an unnecessary and risky no-op.
+            ServiceRepository::updateProduct($serviceId, $newProductId);
+            return 'success';
+        }
+
+        $client            = brandforge_buildClient($params);
+        $godmodeServiceId  = (string) $service->godmode_service_id;
+
+        // Grant the new plan BEFORE removing the old one — deliberately in
+        // this order, not using provision/change_package (it currently
+        // deactivates every active plan on the account, not just this one).
+        // If this call fails, the exception propagates below and the
+        // customer simply keeps what they had — nothing lost.
+        $client->addPlan(Mapper::planPayload($godmodeServiceId, $newPlanCode));
+
+        // Only remove the old plan once the new one is confirmed active. If
+        // THIS call fails, the customer temporarily holds both plans and
+        // the local product mapping below is deliberately left unchanged —
+        // still pointing at the plan that's actually still fully paid up —
+        // rather than silently drifting out of sync with what succeeded.
+        $client->terminatePlan(Mapper::planPayload($godmodeServiceId, $oldPlanCode));
 
         ServiceRepository::updateProduct($serviceId, $newProductId);
         return 'success';

@@ -25,6 +25,7 @@ class ServiceRepository
                 $table->string('godmode_service_id', 255)->nullable();
                 $table->string('godmode_workspace_id', 255)->nullable();
                 $table->string('godmode_user_id', 255)->nullable();
+                $table->timestamp('terminated_at')->nullable();
                 $table->timestamp('created_at');
                 $table->timestamp('updated_at');
             });
@@ -39,6 +40,16 @@ class ServiceRepository
             Capsule::statement(
                 'ALTER TABLE `' . self::TABLE . '` CHANGE COLUMN `godmode_subscription_id` `godmode_service_id` VARCHAR(255) NULL'
             );
+        }
+
+        // Migrate an existing install that predates multi-package support.
+        // Nullable, additive — every existing row reads as "still active",
+        // which is correct: nothing has been terminated through this new
+        // column yet.
+        if (!$schema->hasColumn(self::TABLE, 'terminated_at')) {
+            $schema->table(self::TABLE, function ($table) {
+                $table->timestamp('terminated_at')->nullable()->after('godmode_user_id');
+            });
         }
     }
 
@@ -71,6 +82,43 @@ class ServiceRepository
             ->first();
 
         return $row ?: null;
+    }
+
+    /**
+     * Every currently-active (not terminated) BrandForge service this WHMCS
+     * client holds, oldest first. Empty means "this is their first package"
+     * — CreateAccount calls provision/create. Non-empty means every other
+     * package this client orders attaches to the same Godmode account via
+     * provision/add_plan, using any row here as the account reference
+     * (they all share the same godmode_service_id).
+     *
+     * @return \stdClass[]
+     */
+    public static function findActiveByClientId(int $clientId): array
+    {
+        $rows = Capsule::table(self::TABLE)
+            ->where('whmcs_client_id', $clientId)
+            ->whereNull('terminated_at')
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        return ($rows instanceof \Illuminate\Support\Collection) ? $rows->all() : (array) $rows;
+    }
+
+    /**
+     * Marks one specific package as no longer active. The row is kept —
+     * same audit-trail convention as touch() — only terminated_at changes,
+     * which is what findActiveByClientId() and the Phase 1 duplicate-order
+     * guardrail actually filter on.
+     */
+    public static function markTerminated(int $serviceId): void
+    {
+        Capsule::table(self::TABLE)
+            ->where('whmcs_service_id', $serviceId)
+            ->update([
+                'terminated_at' => date('Y-m-d H:i:s'),
+                'updated_at'    => date('Y-m-d H:i:s'),
+            ]);
     }
 
     /**

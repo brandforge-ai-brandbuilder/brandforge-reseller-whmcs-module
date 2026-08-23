@@ -99,13 +99,19 @@ Set per-product under `Admin → Products/Services → [Product] → Module Sett
 
 ## Service Lifecycle
 
-| WHMCS Event | Godmode Endpoint | What happens |
+A customer can hold more than one BrandForge package at once — ordering a second package never replaces the first, it adds to it. There's no per-product setting for this; every package behaves identically, and which Godmode call fires is decided automatically by whether the customer already has an active service on record:
+
+| WHMCS Event | First package for this customer | Every package after that |
 |---|---|---|
-| Order activated | `POST /provision/create` | Workspace provisioned; `service_id` stored locally |
-| Service suspended | `POST /provision/suspend` | Workspace access disabled |
-| Service unsuspended | `POST /provision/unsuspend` | Workspace access restored |
-| Service terminated | `POST /provision/terminate` | Workspace deprovisioned |
-| Package upgraded | `POST /provision/change_package` | Subscription plan updated |
+| Order activated | `POST /provision/create` — new account, new workspace | `POST /provision/add_plan` — attaches to the existing account |
+| Service suspended | `POST /provision/suspend_plan` — this package only, siblings untouched | same |
+| Service unsuspended | `POST /provision/unsuspend_plan` — this package only. **Never** falls back to account-level unsuspend, even for a customer's only package — that call reactivates every suspended plan on the account, which would incorrectly restore a different, still-unpaid package | same |
+| Service terminated | `POST /provision/terminate_plan`, then — only if this was the customer's last remaining package — also `POST /provision/terminate` as a safety confirmation that the whole account closes out | same |
+| Package upgraded/downgraded | `POST /provision/add_plan` (new plan) then `POST /provision/terminate_plan` (old plan) — a single-plan swap, composed from two calls rather than `POST /provision/change_package`, which replaces *every* active plan on the account, not just one | same |
+
+**Ordering a package the customer already holds is blocked** before any Godmode call is made — `add_plan` has no dedup check on Godmode's side, so without this guard the same plan could be granted (and billed) twice.
+
+**Upgrading/downgrading across Product Groups:** WHMCS's native upgrade/downgrade picker in the client area is scoped to a product's own Product Group. If you want customers switching between two packages in one click (e.g. Solo → Agency), put them in the same Product Group when setting up pricing. Packages in different groups can still be ordered independently — they just won't show up in each other's upgrade picker.
 
 ---
 
@@ -117,6 +123,8 @@ Customers see a branded dashboard on their WHMCS product page:
 - Package name, Subscription ID, Provisioned date
 - **AI Credits** — live progress bar showing used / allocated credits and reset date (requires Godmode `/provision/status` endpoint)
 - **Workspaces** — workspace count and list from Godmode (requires Godmode `/provision/status` endpoint)
+
+> **Known limitation for multi-package customers:** `/provision/status` currently only reports the account's *primary* plan's credits and package info, not the sum across every active package — unlike `add_plan`/`suspend_plan`/`unsuspend_plan`/`terminate_plan`, which already return the full `active_plans` list. A customer with two packages will see this dashboard under-report their real usage until Godmode adds that to `/provision/status`. Provisioning and billing are unaffected — this is a display-only gap.
 - **Launch BrandForge** — calls `POST /provision/sso`, receives a one-time login URL with embedded profile, and redirects the customer directly into their BrandForge workspace
 - **Upgrade Plan** — links to the WHMCS package upgrade flow
 - **View Workspace** — SSO redirect targeting the workspace view
@@ -215,11 +223,15 @@ modules/
 | `GET` | `/api/godmode/v1/provision/ping` | Test Connection |
 | `GET` | `/api/godmode/v1/provision/packages` | Package Sync |
 | `GET` | `/api/godmode/v1/provision/status?service_id=` | Client area credits and workspace display |
-| `POST` | `/api/godmode/v1/provision/create` | CreateAccount |
-| `POST` | `/api/godmode/v1/provision/suspend` | SuspendAccount |
-| `POST` | `/api/godmode/v1/provision/unsuspend` | UnsuspendAccount |
-| `POST` | `/api/godmode/v1/provision/terminate` | TerminateAccount |
-| `POST` | `/api/godmode/v1/provision/change_package` | ChangePackage |
+| `POST` | `/api/godmode/v1/provision/create` | CreateAccount — this customer's first package only |
+| `POST` | `/api/godmode/v1/provision/add_plan` | CreateAccount (every package after the first) · ChangePackage (grants the new plan) |
+| `POST` | `/api/godmode/v1/provision/suspend_plan` | SuspendAccount |
+| `POST` | `/api/godmode/v1/provision/unsuspend_plan` | UnsuspendAccount |
+| `POST` | `/api/godmode/v1/provision/terminate_plan` | TerminateAccount · ChangePackage (removes the old plan) |
+| `POST` | `/api/godmode/v1/provision/suspend` | Not called by the module's hooks — see Service Lifecycle |
+| `POST` | `/api/godmode/v1/provision/unsuspend` | Not called by the module's hooks — see Service Lifecycle |
+| `POST` | `/api/godmode/v1/provision/terminate` | TerminateAccount — only as a safety confirmation when a customer's last remaining package is terminated |
+| `POST` | `/api/godmode/v1/provision/change_package` | Not called by the module's hooks — replaces every active plan on an account, unsafe once a customer can hold more than one. See Service Lifecycle |
 | `POST` | `/api/godmode/v1/provision/sso` | Launch BrandForge / View Workspace |
 
 > The `/provision/status` endpoint is optional. If unavailable, the client area dashboard degrades gracefully — credits and workspace sections are hidden but all other functionality continues normally.

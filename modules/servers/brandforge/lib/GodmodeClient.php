@@ -52,9 +52,57 @@ class GodmodeClient
         return $this->request('POST', '/api/godmode/v1/provision/terminate', $payload, 'TerminateAccount');
     }
 
+    /**
+     * Not called by this module's ChangePackage hook as of multi-package
+     * support — change_package replaces EVERY active plan on the account,
+     * not just one, which broke as soon as a customer could hold more than
+     * one. Left here since it's still a real, valid Godmode endpoint; the
+     * module now composes addPlan()+terminatePlan() for a single-plan swap
+     * instead. See brandforge_ChangePackage().
+     */
     public function changePackage(array $payload): array
     {
         return $this->request('POST', '/api/godmode/v1/provision/change_package', $payload, 'ChangePackage');
+    }
+
+    /**
+     * Attaches an additional plan to an existing account. Response includes
+     * an active_plans[] list but NOT workspace_id/user_id — callers reuse
+     * those from whichever existing service row they resolved the target
+     * account through.
+     */
+    public function addPlan(array $payload): array
+    {
+        return $this->request('POST', '/api/godmode/v1/provision/add_plan', $payload, 'AddPlan');
+    }
+
+    /**
+     * Suspends ONE plan on the account — siblings, and account-level
+     * status, are untouched.
+     */
+    public function suspendPlan(array $payload): array
+    {
+        return $this->request('POST', '/api/godmode/v1/provision/suspend_plan', $payload, 'SuspendPlan');
+    }
+
+    /**
+     * Reactivates ONE suspended plan — never call this expecting it to
+     * touch account-level status or any sibling plan. That's exactly the
+     * property that makes it safe: reactivating one paid-up plan must never
+     * accidentally reactivate a different, still-unpaid one.
+     */
+    public function unsuspendPlan(array $payload): array
+    {
+        return $this->request('POST', '/api/godmode/v1/provision/unsuspend_plan', $payload, 'UnsuspendPlan');
+    }
+
+    /**
+     * Terminates (archives) ONE plan. Godmode already reassigns primary to
+     * another active plan if this one was it.
+     */
+    public function terminatePlan(array $payload): array
+    {
+        return $this->request('POST', '/api/godmode/v1/provision/terminate_plan', $payload, 'TerminatePlan');
     }
 
     public function getPackages(): array
