@@ -44,11 +44,16 @@ class SsoHandler
             );
         }
 
-        // Godmode now returns user/entity/package/credits alongside the token.
-        // Encode them as a base64url query param so the frontend can skip the
-        // impersonate fallback entirely.
+        // Godmode now returns user/entity/package/credits/reseller alongside
+        // the token. Encode them as a base64url query param so the frontend
+        // can skip the impersonate fallback entirely. `reseller` here is
+        // Godmode's own top-level sso_reseller() object — a different, more
+        // complete shape than the one nested inside `entity` — and without
+        // it the frontend previously had nothing to read for this until its
+        // own Ironman-side fallback resolved it, which isn't guaranteed to
+        // have anything to fall back to on a genuinely first-ever login.
         $profile = [];
-        foreach (['user', 'entity', 'package', 'credits'] as $key) {
+        foreach (['user', 'entity', 'package', 'credits', 'reseller'] as $key) {
             if (isset($data[$key]) && \is_array($data[$key])) {
                 $profile[$key] = $data[$key];
             }
