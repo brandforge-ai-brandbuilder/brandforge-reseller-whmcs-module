@@ -230,7 +230,7 @@ function brandforge_CreateAccount(array $params): string
             );
         }
 
-        $payload = Mapper::createAccountPayload($params, $planCode);
+        $payload = Mapper::createAccountPayload($params, $planCode, $clientId, $whmcsProductId);
 
         $response = $client->createAccount($payload);
 
@@ -298,7 +298,13 @@ function brandforge_addPlanToExistingAccount(
     $account = $activeSiblings[0];
 
     $response = $client->addPlan(
-        Mapper::planPayload((string) $account->godmode_service_id, $planCode)
+        Mapper::addPlanPayload(
+            (string) $account->godmode_service_id,
+            $planCode,
+            $clientId,
+            $whmcsProductId,
+            (int) ($params['serviceid'] ?? 0)
+        )
     );
 
     // Accept both a flat response and a {"data":{...}} envelope
@@ -493,6 +499,12 @@ function brandforge_ChangePackage(array $params): string
             return 'success';
         }
 
+        $clientId = (int) (
+            $params['clientsdetails']['id']
+            ?? $params['clientsdetails']['userid']
+            ?? $params['userid']
+            ?? 0
+        );
         $client            = brandforge_buildClient($params);
         $godmodeServiceId  = (string) $service->godmode_service_id;
 
@@ -501,7 +513,16 @@ function brandforge_ChangePackage(array $params): string
         // deactivates every active plan on the account, not just this one).
         // If this call fails, the exception propagates below and the
         // customer simply keeps what they had — nothing lost.
-        $client->addPlan(Mapper::planPayload($godmodeServiceId, $newPlanCode));
+        // Same WHMCS service — it's the one product changing, not the
+        // service record — so whmcs_service_id here is $serviceId itself,
+        // now representing $newProductId instead of the old product.
+        $client->addPlan(Mapper::addPlanPayload(
+            $godmodeServiceId,
+            $newPlanCode,
+            $clientId,
+            $newProductId,
+            $serviceId
+        ));
 
         // Only remove the old plan once the new one is confirmed active. If
         // THIS call fails, the customer temporarily holds both plans and

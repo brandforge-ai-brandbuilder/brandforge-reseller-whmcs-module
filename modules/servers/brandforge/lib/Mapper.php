@@ -15,19 +15,31 @@ class Mapper
     /**
      * POST /api/godmode/v1/provision/create
      *
-     * @param array  $params        WHMCS module params
-     * @param string $planCode      Godmode slug from mod_brandforge_packages.godmode_slug
+     * @param array  $params          WHMCS module params
+     * @param string $planCode        Godmode slug from mod_brandforge_packages.godmode_slug
+     * @param int    $whmcsClientId   tblclients.id — the WHMCS customer placing this order
+     * @param int    $whmcsProductId  tblproducts.id — the WHMCS catalog product being ordered
      */
-    public static function createAccountPayload(array $params, string $planCode): array
-    {
+    public static function createAccountPayload(
+        array  $params,
+        string $planCode,
+        int    $whmcsClientId,
+        int    $whmcsProductId
+    ): array {
         $client = $params['clientsdetails'] ?? [];
 
         return [
-            'email'        => $client['email']       ?? '',
-            'first_name'   => $client['firstname']   ?? '',
-            'last_name'    => $client['lastname']     ?? '',
-            'company_name' => $client['companyname']  ?? '',
-            'plan_code'    => $planCode,
+            'email'             => $client['email']       ?? '',
+            'first_name'        => $client['firstname']   ?? '',
+            'last_name'         => $client['lastname']     ?? '',
+            'company_name'      => $client['companyname']  ?? '',
+            'plan_code'         => $planCode,
+            // Round-tripped so Godmode can build a WHMCS deep link (e.g. the
+            // Settings → Billing upgrade/downgrade URL) without ever needing
+            // to reach into the reseller's WHMCS database itself.
+            'whmcs_client_id'   => $whmcsClientId,
+            'whmcs_product_id'  => $whmcsProductId,
+            'whmcs_service_id'  => (int) ($params['serviceid'] ?? 0),
         ];
     }
 
@@ -56,14 +68,14 @@ class Mapper
     }
 
     /**
-     * POST /api/godmode/v1/provision/add_plan
-     * POST /api/godmode/v1/provision/suspend_plan   (Phase 2)
-     * POST /api/godmode/v1/provision/unsuspend_plan (Phase 2)
-     * POST /api/godmode/v1/provision/terminate_plan (Phase 2/3)
+     * POST /api/godmode/v1/provision/suspend_plan
+     * POST /api/godmode/v1/provision/unsuspend_plan
+     * POST /api/godmode/v1/provision/terminate_plan
      *
-     * All four take the identical shape — one specific plan on an existing
-     * account — so one builder covers every plan-scoped call the module
-     * makes after a customer's first package.
+     * Deliberately minimal — these three act on a plan record Godmode
+     * already has (created via createAccountPayload/addPlanPayload below,
+     * both of which already carried the WHMCS identifiers), so there's
+     * nothing new to (re-)send here.
      *
      * @param string $godmodeServiceId  The ACCOUNT's service_id — shared by
      *                                  every package a customer holds, not
@@ -75,6 +87,38 @@ class Mapper
         return [
             'service_id' => $godmodeServiceId,
             'plan_code'  => $planCode,
+        ];
+    }
+
+    /**
+     * POST /api/godmode/v1/provision/add_plan
+     *
+     * Unlike planPayload() above, this is specifically for the moment a plan
+     * record is CREATED — a customer's second-or-later package (CreateAccount's
+     * add-to-existing-account path), or the new plan half of a ChangePackage
+     * swap. Both are genuinely new plan records on Godmode's side, so both
+     * carry the same WHMCS identifiers createAccountPayload() sends for a
+     * customer's first package — same reasoning as there.
+     *
+     * @param string $godmodeServiceId  The ACCOUNT's service_id.
+     * @param string $planCode          The plan_code being attached.
+     * @param int    $whmcsClientId     tblclients.id
+     * @param int    $whmcsProductId    tblproducts.id — the product now backing this plan
+     * @param int    $whmcsServiceId    tblhosting.id — the WHMCS service this plan is for
+     */
+    public static function addPlanPayload(
+        string $godmodeServiceId,
+        string $planCode,
+        int    $whmcsClientId,
+        int    $whmcsProductId,
+        int    $whmcsServiceId
+    ): array {
+        return [
+            'service_id'        => $godmodeServiceId,
+            'plan_code'         => $planCode,
+            'whmcs_client_id'   => $whmcsClientId,
+            'whmcs_product_id'  => $whmcsProductId,
+            'whmcs_service_id'  => $whmcsServiceId,
         ];
     }
 }
