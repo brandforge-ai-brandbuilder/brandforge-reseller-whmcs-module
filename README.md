@@ -109,7 +109,7 @@ A customer can hold more than one BrandForge package at once — ordering a seco
 | Service terminated | `POST /provision/terminate_plan`, then — only if this was the customer's last remaining package — also `POST /provision/terminate` as a safety confirmation that the whole account closes out | same |
 | Package upgraded/downgraded | `POST /provision/add_plan` (new plan) then `POST /provision/terminate_plan` (old plan) — a single-plan swap, composed from two calls rather than `POST /provision/change_package`, which replaces *every* active plan on the account, not just one | same |
 
-**Ordering a package the customer already holds is blocked** before any Godmode call is made — `add_plan` has no dedup check on Godmode's side, so without this guard the same plan could be granted (and billed) twice.
+**Ordering a package the customer already holds is allowed, deliberately** — same real-world shape as buying two separate hosting accounts of the identical tier (one per site, say). Each order is its own genuinely new WHMCS service with its own invoice, so it's never an accidental resubmit — each purchase grants its own independent entitlement, stacking with whatever the customer already had.
 
 **Upgrading/downgrading across Product Groups:** WHMCS's native upgrade/downgrade picker in the client area is scoped to a product's own Product Group. If you want customers switching between two packages in one click (e.g. Solo → Agency), put them in the same Product Group when setting up pricing. Packages in different groups can still be ordered independently — they just won't show up in each other's upgrade picker.
 

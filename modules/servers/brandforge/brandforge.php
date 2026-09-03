@@ -267,9 +267,13 @@ function brandforge_CreateAccount(array $params): string
  * Attaches $planCode to the account this client already holds, via
  * provision/add_plan — the "every package after the first" path.
  *
- * Guardrail: refuses to attach a plan_code the client already has active.
- * add_plan has no dedup check on Godmode's side — without this, ordering
- * the same package twice would grant its credits twice.
+ * Ordering the same plan the client already holds a second time is
+ * intentionally allowed — same real-world shape as buying two separate
+ * hosting accounts of the identical tier (one per site, say). Each order is
+ * its own genuinely new WHMCS service (its own serviceid, its own invoice),
+ * so this is never an accidental resubmit of the same order — it's a
+ * deliberate second purchase, and each one contributes its own entitlement,
+ * same as any other package. No dedup guard here by design.
  *
  * @param \stdClass[] $activeSiblings  This client's current active packages,
  *                                     from ServiceRepository::findActiveByClientId().
@@ -282,15 +286,6 @@ function brandforge_addPlanToExistingAccount(
     string        $planCode,
     array         $activeSiblings
 ): string {
-    foreach ($activeSiblings as $sibling) {
-        $siblingPlanCode = PackageLookup::packageSlug((int) $sibling->whmcs_product_id);
-        if ($siblingPlanCode !== null && $siblingPlanCode === $planCode) {
-            return 'This client already has an active package for this plan. '
-                 . 'Ordering it again would grant duplicate credits — cancel the existing one first '
-                 . 'if the intent was to replace it.';
-        }
-    }
-
     // Any sibling row identifies the same Godmode account — they all share
     // one godmode_service_id. add_plan's response has no workspace_id/user_id
     // (only provision/create returns those), so this reuses the account's
