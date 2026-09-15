@@ -123,6 +123,7 @@ class WhmcsProductManager
             'configoption3' => '',
             'configoption4' => 'BrandForge',
             'configoption5' => '#6366f1',
+            'configoption8' => 'english', // Client Area Language — see brandforge_ConfigOptions()
         ]);
 
         return $pid;

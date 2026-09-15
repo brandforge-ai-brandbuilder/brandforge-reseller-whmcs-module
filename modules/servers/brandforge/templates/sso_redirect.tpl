@@ -1,6 +1,8 @@
 {*
   BrandForge — SSO Redirect Page
   Vars: sso_url (string), sso_error (string), brand_name (string)
+  lang (array, translated strings — see lib/Translator.php),
+  lang_launching, lang_open_brand (string, pre-interpolated with brand_name)
 *}
 {assign var="bf_name"    value=$brand_name|default:'BrandForge'}
 {assign var="bf_primary" value=$brand_color|default:'#6366f1'}
@@ -103,14 +105,14 @@
 
   <div class="bf-redirect-wrap">
     <div class="bf-redirect-icon">🚀</div>
-    <div class="bf-redirect-title">Launching {$bf_name|escape}&hellip;</div>
+    <div class="bf-redirect-title">{$lang_launching|escape}</div>
     <div class="bf-redirect-sub">
-      You are being securely signed in to your workspace.<br>
-      If you are not redirected automatically:
+      {$lang.sso_signing_in|escape}<br>
+      {$lang.sso_if_not_redirected|escape}
     </div>
     <a href="{$sso_url|escape}" target="_blank" rel="noopener noreferrer"
        class="bf-redirect-link">
-      Open {$bf_name|escape} &rarr;
+      {$lang_open_brand|escape}
     </a>
   </div>
 
@@ -118,13 +120,13 @@
 
   <div class="bf-error-wrap">
     <div class="bf-error-box">
-      <h4>Launch failed</h4>
-      <p>We could not generate a secure login link for your account. Please try again or contact support.</p>
+      <h4>{$lang.launch_failed|escape}</h4>
+      <p>{$lang.launch_failed_body|escape}</p>
       {if $sso_error}
         <code>{$sso_error|escape}</code>
       {/if}
       <a href="javascript:history.back()" class="bf-btn-back">
-        ← Go back
+        {$lang.go_back|escape}
       </a>
     </div>
   </div>

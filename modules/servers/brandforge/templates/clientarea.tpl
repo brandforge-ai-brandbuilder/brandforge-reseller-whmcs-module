@@ -21,6 +21,13 @@
     workspaces_max      int     (0 = unknown; from package plan via Godmode)
     workspaces_active   int     (count of active workspaces from Godmode status)
     workspaces          array   (list of workspace objects: {id, name, slug, status}; empty until Godmode bundles Ironman names)
+
+    lang                array   (translated strings for configoption8's language — see lib/Translator.php;
+                                  WHMCS has no built-in localisation for provisioning modules, unlike the
+                                  admin-side addon page, so this is entirely self-built)
+    lang_launch, lang_powered_by, lang_workspace_note, lang_being_set_up,
+    lang_status_pending, lang_credits_used_of, lang_credits_resets,
+    lang_workspaces_used_of                string  (pre-formatted/interpolated — sprintf() already applied in PHP)
 *}
 
 {assign var="bf_primary"   value=$brand_color|default:'#6366f1'}
@@ -341,11 +348,11 @@
     {assign var="sl" value=$service_status|lower}
     {if $sl eq 'active'}
       <span class="bf-badge bf-badge--active">
-        <span class="bf-badge-dot"></span>Active
+        <span class="bf-badge-dot"></span>{$lang.status_active|escape}
       </span>
     {elseif $sl eq 'suspended'}
       <span class="bf-badge bf-badge--suspended">
-        <span class="bf-badge-dot"></span>Suspended
+        <span class="bf-badge-dot"></span>{$lang.status_suspended|escape}
       </span>
     {elseif $sl eq 'cancelled' or $sl eq 'terminated'}
       <span class="bf-badge bf-badge--cancelled">
@@ -362,17 +369,17 @@
   <div class="bf-grid">
 
     <div class="bf-card">
-      <span class="bf-card-label">Package</span>
+      <span class="bf-card-label">{$lang.label_package|escape}</span>
       <span class="bf-card-value">{$package_name|escape}</span>
     </div>
 
     <div class="bf-card">
-      <span class="bf-card-label">Status</span>
+      <span class="bf-card-label">{$lang.label_status|escape}</span>
       <span class="bf-card-value">
         {if $sl eq 'active'}
-          <span class="bf-status-dot bf-status-dot--active"></span>Active
+          <span class="bf-status-dot bf-status-dot--active"></span>{$lang.status_active|escape}
         {elseif $sl eq 'suspended'}
-          <span class="bf-status-dot bf-status-dot--suspended"></span>Suspended
+          <span class="bf-status-dot bf-status-dot--suspended"></span>{$lang.status_suspended|escape}
         {else}
           <span class="bf-status-dot bf-status-dot--other"></span>{$service_status|escape}
         {/if}
@@ -380,18 +387,18 @@
     </div>
 
     <div class="bf-card">
-      <span class="bf-card-label">Subscription ID</span>
+      <span class="bf-card-label">{$lang.label_subscription_id|escape}</span>
       <span class="bf-card-value bf-card-value--mono">{$subscription_id|escape}</span>
     </div>
 
     {if $workspace_id}
     <div class="bf-card">
-      <span class="bf-card-label">Workspace ID</span>
+      <span class="bf-card-label">{$lang.label_workspace_id|escape}</span>
       <span class="bf-card-value bf-card-value--mono">{$workspace_id|escape}</span>
     </div>
     {elseif $created_at}
     <div class="bf-card">
-      <span class="bf-card-label">Provisioned</span>
+      <span class="bf-card-label">{$lang.label_provisioned|escape}</span>
       <span class="bf-card-value bf-card-value--date">{$created_at|escape}</span>
     </div>
     {/if}
@@ -414,17 +421,17 @@
     {/if}
     <div class="bf-usage-block">
       <div class="bf-usage-header">
-        <span class="bf-usage-title">AI Credits</span>
+        <span class="bf-usage-title">{$lang.label_ai_credits|escape}</span>
         <span class="bf-usage-count{if $credits_over_limit} bf-usage-count--over{elseif $pct gt 80} bf-usage-count--warn{/if}">
-          {$credits_used} / {$credits_allocated} used
+          {$lang_credits_used_of|escape}
         </span>
       </div>
       <div class="bf-progress-track">
         <div class="bf-progress-fill{$bar_class}" style="width:{$pct}%"></div>
       </div>
       <div class="bf-usage-meta">
-        <span><strong>{$credits_remaining}</strong> remaining</span>
-        {if $credits_period_end}<span>Resets {$credits_period_end|escape}</span>{/if}
+        <span><strong>{$credits_remaining}</strong> {$lang.remaining|escape}</span>
+        {if $credits_period_end}<span>{$lang_credits_resets|escape}</span>{/if}
       </div>
     </div>
     {/if}
@@ -432,13 +439,11 @@
     {* Workspaces block — count from Godmode; list when Godmode bundles Ironman names *}
     <div class="bf-usage-block">
       <div class="bf-usage-header">
-        <span class="bf-usage-title">Workspaces</span>
-        {if $workspaces_max gt 0}
-          <span class="bf-usage-count{if $workspaces_active gte $workspaces_max} bf-usage-count--warn{/if}">
-            {$workspaces_active} / {$workspaces_max} used
+        <span class="bf-usage-title">{$lang.label_workspaces|escape}</span>
+        {if $lang_workspaces_used_of}
+          <span class="bf-usage-count{if $workspaces_max gt 0 and $workspaces_active gte $workspaces_max} bf-usage-count--warn{/if}">
+            {$lang_workspaces_used_of|escape}
           </span>
-        {elseif $workspaces_active gt 0}
-          <span class="bf-usage-count">{$workspaces_active} active</span>
         {/if}
       </div>
 
@@ -448,20 +453,20 @@
           {assign var="ws_inactive" value=($ws.active eq false)}
           <li class="bf-ws-item">
             <span class="bf-ws-dot{if $ws_inactive} bf-ws-dot--inactive{/if}"></span>
-            <span class="bf-ws-name">{$ws.name|default:'Untitled'|escape}</span>
+            <span class="bf-ws-name">{$ws.name|default:$lang.untitled|escape}</span>
             <span class="bf-ws-pill{if $ws_inactive} bf-ws-pill--inactive{/if}">
-              {if $ws_inactive}inactive{else}active{/if}
+              {if $ws_inactive}{$lang.inactive|escape}{else}{$lang.active|escape}{/if}
             </span>
           </li>
           {/foreach}
         </ul>
       {else}
         <div style="font-size:12.5px;color:#6b7280;line-height:1.55;">
-          Workspace details and brand projects are managed inside {$bf_name|escape}.
+          {$lang_workspace_note|escape}
           {if $sso_url}
             <a href="{$sso_url|escape}" target="_blank" rel="noopener noreferrer"
                style="color:{$bf_primary};font-weight:600;text-decoration:none;">
-              Open app →
+              {$lang.open_app|escape}
             </a>
           {/if}
         </div>
@@ -476,7 +481,7 @@
   <div class="bf-alert bf-alert--error">
     <span class="bf-alert-icon">⚠️</span>
     <div>
-      <strong>Launch link unavailable:</strong><br>
+      <strong>{$lang.launch_unavailable|escape}</strong><br>
       <code>{$sso_error|escape}</code>
     </div>
   </div>
@@ -489,7 +494,7 @@
       <a href="{$sso_url|escape}" target="_blank" rel="noopener noreferrer"
          class="bf-btn-launch{if $sl neq 'active'} bf-btn-launch--disabled{/if}">
         <span class="bf-launch-icon">🚀</span>
-        Launch {$bf_name|escape}
+        {$lang_launch|escape}
       </a>
     {else}
       <form method="post" action="clientarea.php" style="margin:0">
@@ -502,7 +507,7 @@
                 class="bf-btn-launch{if $sl neq 'active'} bf-btn-launch--disabled{/if}"
                 {if $sl neq 'active'}disabled{/if}>
           <span class="bf-launch-icon">🚀</span>
-          Launch {$bf_name|escape}
+          {$lang_launch|escape}
         </button>
       </form>
     {/if}
@@ -513,13 +518,13 @@
 
     <a href="upgrade.php?type=package&id={$service_id|intval}"
        class="bf-btn-secondary">
-      ↑&nbsp; Upgrade Plan
+      ↑&nbsp; {$lang.upgrade_plan|escape}
     </a>
 
     {if $sso_url}
       <a href="{$sso_url|escape}" target="_blank" rel="noopener noreferrer"
          class="bf-btn-secondary">
-        🏢&nbsp; View Workspace
+        🏢&nbsp; {$lang.view_workspace|escape}
       </a>
     {else}
       <form method="post" action="clientarea.php" style="margin:0">
@@ -529,7 +534,7 @@
         <input type="hidden" name="a"      value="ViewWorkspace">
         <input type="hidden" name="token"  value="{$token|default:''|escape}">
         <button type="submit" class="bf-btn-secondary bf-btn-secondary--form">
-          🏢&nbsp; View Workspace
+          🏢&nbsp; {$lang.view_workspace|escape}
         </button>
       </form>
     {/if}
@@ -537,7 +542,7 @@
   </div>
 
   <div class="bf-footer">
-    Powered by {$bf_name|escape}
+    {$lang_powered_by|escape}
     {if $subscription_id} &mdash; <span style="font-family:monospace">{$subscription_id|truncate:20:'…':true|escape}</span>{/if}
   </div>
 
@@ -548,20 +553,19 @@
     <div class="bf-header-left">
       <div>
         <div class="bf-header-title">{$bf_name|escape}</div>
-        <div class="bf-header-sub">Service Dashboard</div>
+        <div class="bf-header-sub">{$lang.service_dashboard|escape}</div>
       </div>
     </div>
     <span class="bf-badge bf-badge--unknown">
-      <span class="bf-badge-dot"></span>{$service_status|default:'Pending'|escape}
+      <span class="bf-badge-dot"></span>{$service_status|default:$lang_status_pending|escape}
     </span>
   </div>
 
   <div class="bf-alert bf-alert--warn">
     <span class="bf-alert-icon">⏳</span>
     <div>
-      <strong>Service not yet provisioned.</strong><br>
-      Your {$bf_name|escape} subscription is being set up. This usually takes less than a minute.
-      If this message persists, please contact support.
+      <strong>{$lang.not_provisioned|escape}</strong><br>
+      {$lang_being_set_up|escape}
     </div>
   </div>
 

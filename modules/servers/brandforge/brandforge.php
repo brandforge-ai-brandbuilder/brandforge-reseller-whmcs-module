@@ -23,6 +23,7 @@ require_once $libDir . 'Mapper.php';
 require_once $libDir . 'PackageLookup.php';
 require_once $libDir . 'ServiceRepository.php';
 require_once $libDir . 'SsoHandler.php';
+require_once $libDir . 'Translator.php';
 
 use BrandForge\GodmodeClient;
 use BrandForge\Logger;
@@ -30,6 +31,7 @@ use BrandForge\Mapper;
 use BrandForge\PackageLookup;
 use BrandForge\ServiceRepository;
 use BrandForge\SsoHandler;
+use BrandForge\Translator;
 use BrandForge\Exceptions\GodmodeApiException;
 
 // ---------------------------------------------------------------------------
@@ -166,6 +168,26 @@ function brandforge_ConfigOptions(): array
             'Default'     => '',
             'Description' => 'Gradient end color for buttons and header (hex, e.g. #8b5cf6). '
                            . 'Leave blank to use Brand Primary Color as a solid (no gradient).',
+        ],
+        // Language for the client-area dashboard/SSO page text (Launch button,
+        // status labels, etc.) — WHMCS has no built-in mechanism for this on
+        // provisioning modules (unlike the admin-side Package Sync addon page,
+        // which follows the logged-in admin's own WHMCS language automatically).
+        // Pre-filled by One-Click Setup the same way Brand Name is; a reseller
+        // can still override it per product.
+        //
+        // All 26 languages this WHMCS install's client area supports now have
+        // a lang file (see lang/) — AI-drafted first passes, not yet reviewed
+        // by native speakers (see the header comment in each
+        // lang/{language}.php file, and note Arabic/Farsi/Hebrew explicitly
+        // flag that RTL arrow-direction convention hasn't been reviewed
+        // either). Add a 27th by dropping in lang/{language}.php (see
+        // lib/Translator.php) and adding its exact filename (no .php) here.
+        'Client Area Language' => [
+            'Type'        => 'dropdown',
+            'Options'     => 'english,french,german,spanish,italian,dutch,portuguese-pt,portuguese-br,russian,czech,hungarian,romanian,danish,swedish,norwegian,croatian,estonian,macedonian,catalan,ukranian,arabic,azerbaijani,chinese,farsi,hebrew,turkish',
+            'Default'     => 'english',
+            'Description' => 'Language for the client-area dashboard and SSO launch page text. AI-drafted first pass for non-English options — recommend native-speaker review before relying on them.',
         ],
     ];
 }
@@ -545,15 +567,24 @@ function brandforge_ClientArea(array $params): array
     $serviceId = (int) ($params['serviceid'] ?? 0);
     $service   = ServiceRepository::findByServiceId($serviceId);
 
+    $brandName = trim((string) ($params['configoption4'] ?? '')) ?: 'BrandForge';
+    $t         = Translator::strings((string) ($params['configoption8'] ?? 'english'));
+
     // Base vars available to both provisioned and unprovisioned states.
     $vars = [
         'has_service'    => false,
-        'service_status' => $params['status'] ?? 'Unknown',
+        'service_status' => $params['status'] ?? $t['status_unknown'],
         'service_id'     => $serviceId,
-        'brand_name'            => $params['configoption4'] ?? 'BrandForge',
+        'brand_name'            => $brandName,
         'brand_color'           => $params['configoption5'] ?? '#6366f1',
         'brand_color_secondary' => trim((string) ($params['configoption7'] ?? ''))
                                    ?: ($params['configoption5'] ?? '#6366f1'),
+        'lang'           => $t,
+        'lang_launch'          => sprintf($t['launch'], $brandName),
+        'lang_powered_by'      => sprintf($t['powered_by'], $brandName),
+        'lang_workspace_note'  => sprintf($t['workspace_note'], $brandName),
+        'lang_being_set_up'    => sprintf($t['being_set_up'], $brandName),
+        'lang_status_pending'  => $t['status_pending'],
     ];
 
     if ($service === null) {
@@ -602,6 +633,14 @@ function brandforge_ClientArea(array $params): array
     $creditsPeriodEnd = (string) ($creditsData['period_end'] ?? '');
     $creditsOverLimit = !empty($creditsData['over_limit']);
 
+    // Pre-formatted (translated + interpolated) strings the template can't
+    // build itself — Smarty has no sprintf-with-multiple-args primitive.
+    $langCreditsUsedOf     = sprintf($t['used_of'], $creditsUsed, $creditsAllocated);
+    $langCreditsResets     = $creditsPeriodEnd !== '' ? sprintf($t['resets'], $creditsPeriodEnd) : '';
+    $langWorkspacesUsedOf  = $workspacesMax > 0
+        ? sprintf($t['active_of_max'], $workspacesActive, $workspacesMax)
+        : ($workspacesActive > 0 ? sprintf($t['active_count'], $workspacesActive) : '');
+
     $vars = array_merge($vars, [
         'has_service'        => true,
         'package_name'       => $packageName,
@@ -611,6 +650,9 @@ function brandforge_ClientArea(array $params): array
         'sso_error'          => $ssoError,
         'created_at'         => (string) ($service->created_at ?? ''),
         'has_usage_data'     => ($serviceInfo !== null),
+        'lang_credits_used_of'    => $langCreditsUsedOf,
+        'lang_credits_resets'     => $langCreditsResets,
+        'lang_workspaces_used_of' => $langWorkspacesUsedOf,
         'credits_allocated'  => $creditsAllocated,
         'credits_used'       => $creditsUsed,
         'credits_remaining'  => $creditsRemaining,
@@ -631,9 +673,10 @@ function brandforge_ClientArea(array $params): array
 function brandforge_ClientAreaCustomButtonArray(array $params): array
 {
     $brandName = trim((string) ($params['configoption4'] ?? '')) ?: 'BrandForge';
+    $t         = Translator::strings((string) ($params['configoption8'] ?? 'english'));
     return [
-        'Launch ' . $brandName => 'LaunchBrandForge',
-        'View Workspace'       => 'ViewWorkspace',
+        sprintf($t['launch'], $brandName) => 'LaunchBrandForge',
+        $t['view_workspace']              => 'ViewWorkspace',
     ];
 }
 
@@ -653,8 +696,16 @@ function brandforge_doSso(array $params, string $returnPath = ''): array
     $brandName  = trim((string) ($params['configoption4'] ?? '')) ?: 'BrandForge';
     $brandColor = trim((string) ($params['configoption5'] ?? '')) ?: '#6366f1';
     $brandAccent = trim((string) ($params['configoption7'] ?? '')) ?: $brandColor;
+    $t           = Translator::strings((string) ($params['configoption8'] ?? 'english'));
 
-    $baseVars = ['brand_name' => $brandName, 'brand_color' => $brandColor, 'brand_accent' => $brandAccent];
+    $baseVars = [
+        'brand_name'   => $brandName,
+        'brand_color'  => $brandColor,
+        'brand_accent' => $brandAccent,
+        'lang'         => $t,
+        'lang_launching'   => sprintf($t['launching'], $brandName),
+        'lang_open_brand'  => sprintf($t['open_brand'], $brandName),
+    ];
 
     if ($service === null) {
         return [

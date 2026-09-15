@@ -35,36 +35,72 @@ use BrandForge\Addon\WhmcsServerManager;
 use WHMCS\Database\Capsule;
 
 // ---------------------------------------------------------------------------
+// Localisation
+// ---------------------------------------------------------------------------
+
+/**
+ * WHMCS's own addon-module localisation convention: it auto-includes
+ * lang/{admin's language}.php (populating the global $_ADDONLANG array)
+ * before calling brandforge_output()/_sidebar(), based on the currently
+ * logged-in admin's own language preference — see lang/english.php for the
+ * full key list and how to add another language.
+ *
+ * This always merges whatever WHMCS loaded OVER our own English baseline
+ * (loaded directly, not relying on WHMCS having done so), so:
+ *   - a language WHMCS didn't load for (e.g. _config()/_activate() may run
+ *     before WHMCS wires $_ADDONLANG at all) still renders in English, and
+ *   - a translation file that's missing a key falls back to English for
+ *     just that key, instead of a blank string or a PHP notice.
+ */
+function brandforge_lang(): array
+{
+    static $english = null;
+    if ($english === null) {
+        $_ADDONLANG = [];
+        $file       = __DIR__ . '/lang/english.php';
+        if (is_file($file)) {
+            include $file;
+        }
+        $english = $_ADDONLANG;
+    }
+
+    $loaded = $GLOBALS['_ADDONLANG'] ?? [];
+    return is_array($loaded) ? array_merge($english, $loaded) : $english;
+}
+
+// ---------------------------------------------------------------------------
 // Module registration
 // ---------------------------------------------------------------------------
 
 function brandforge_config(): array
 {
+    $t = brandforge_lang();
+
     return [
-        'name'        => 'BrandForge Package Sync',
-        'description' => 'Synchronise Godmode packages with WHMCS products and maintain the provisioning mapping table.',
+        'name'        => $t['bf_cfg_name'],
+        'description' => $t['bf_cfg_description'],
         'version'     => '1.1.0',
         'author'      => 'BrandForge',
         'fields'      => [
             'godmode_api_url' => [
-                'FriendlyName' => 'Godmode API URL',
+                'FriendlyName' => $t['bf_cfg_api_url'],
                 'Type'         => 'text',
                 'Size'         => 60,
                 'Default'      => 'https://staging.brandforge.software',
-                'Description'  => 'Base URL for the Godmode API (no trailing slash)',
+                'Description'  => $t['bf_cfg_api_url_desc'],
             ],
             'godmode_api_key' => [
-                'FriendlyName' => 'Godmode API Key',
+                'FriendlyName' => $t['bf_cfg_api_key'],
                 'Type'         => 'password',
                 'Size'         => 60,
                 'Default'      => '',
-                'Description'  => 'Bearer token used for all Godmode API requests',
+                'Description'  => $t['bf_cfg_api_key_desc'],
             ],
             'debug_mode' => [
-                'FriendlyName' => 'Debug Mode',
+                'FriendlyName' => $t['bf_cfg_debug_mode'],
                 'Type'         => 'yesno',
                 'Default'      => 'no',
-                'Description'  => 'Write verbose API logs to the WHMCS Module Log',
+                'Description'  => $t['bf_cfg_debug_mode_desc'],
             ],
         ],
     ];
@@ -76,17 +112,18 @@ function brandforge_config(): array
 
 function brandforge_activate(): array
 {
+    $t = brandforge_lang();
     try {
         PackageRepository::createTable();
         ServiceRepository::ensureTable();
         return [
             'status'      => 'success',
-            'description' => 'BrandForge Package Sync activated. Package and service mapping tables created.',
+            'description' => $t['bf_activated'],
         ];
     } catch (\Exception $e) {
         return [
             'status'      => 'error',
-            'description' => 'Activation failed: ' . $e->getMessage(),
+            'description' => sprintf($t['bf_activate_failed'], $e->getMessage()),
         ];
     }
 }
@@ -96,7 +133,7 @@ function brandforge_deactivate(): array
     // Tables are kept on deactivation to preserve mappings across reinstalls.
     return [
         'status'      => 'success',
-        'description' => 'BrandForge Package Sync deactivated. Mapping data preserved.',
+        'description' => brandforge_lang()['bf_deactivated'],
     ];
 }
 
@@ -111,6 +148,8 @@ function brandforge_upgrade(array $vars): void
 
 function brandforge_output(array $vars): void
 {
+    $t = brandforge_lang();
+
     $moduleLink = $vars['modulelink'];
     $apiUrl     = rtrim((string) ($vars['godmode_api_url'] ?? ''), '/');
     $apiKey     = (string) ($vars['godmode_api_key'] ?? '');
@@ -129,7 +168,7 @@ function brandforge_output(array $vars): void
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (isset($_POST['token']) && $token && $_POST['token'] !== $token) {
-            $flash     = 'Invalid security token. Please refresh the page and try again.';
+            $flash     = $t['bf_flash_invalid_token'];
             $flashType = 'danger';
         } else {
             $action    = $_POST['action']    ?? '';
@@ -143,9 +182,7 @@ function brandforge_output(array $vars): void
                     // -----------------------------------------------------------
                     case 'auto_setup':
                         if ($apiUrl === '' || $apiKey === '') {
-                            throw new \RuntimeException(
-                                'Godmode API URL and API Key must be saved in the addon settings before running setup.'
-                            );
+                            throw new \RuntimeException($t['bf_flash_need_creds']);
                         }
 
                         // 1. Verify the API key works before touching anything
@@ -182,11 +219,9 @@ function brandforge_output(array $vars): void
                             }
                         }
 
-                        $flash = 'Setup complete! '
-                            . "Synced {$syncResult['synced']} package(s) and created {$created} WHMCS product(s). "
-                            . 'Add pricing to each product, then you are ready to sell.';
+                        $flash = sprintf($t['bf_flash_setup_complete'], $syncResult['synced'], $created);
                         if (!empty($errors)) {
-                            $flash    .= ' Errors: ' . implode('; ', $errors);
+                            $flash    .= sprintf($t['bf_flash_errors'], implode('; ', $errors));
                             $flashType = 'warning';
                         } else {
                             $flashType = 'success';
@@ -218,10 +253,10 @@ function brandforge_output(array $vars): void
                                 $errors[] = '"' . $m->godmode_name . '": ' . $e->getMessage();
                             }
                         }
-                        $flash     = "Created {$created} product(s).";
+                        $flash     = sprintf($t['bf_flash_created_n'], $created);
                         $flashType = empty($errors) ? 'success' : 'warning';
                         if (!empty($errors)) {
-                            $flash .= ' Errors: ' . implode('; ', $errors);
+                            $flash .= sprintf($t['bf_flash_errors'], implode('; ', $errors));
                         }
                         break;
 
@@ -237,9 +272,7 @@ function brandforge_output(array $vars): void
                         ServiceRepository::ensureTable();
                         // Server records are separate — delete after tables are safe.
                         WhmcsServerManager::deleteAll();
-                        $flash     = 'Reset complete. Mapping tables cleared and server record removed. '
-                                   . 'Your WHMCS products were kept — run One-Click Setup to re-link them '
-                                   . '(no duplicates will be created).';
+                        $flash     = $t['bf_flash_reset_complete'];
                         $flashType = 'success';
                         break;
 
@@ -248,9 +281,9 @@ function brandforge_output(array $vars): void
                     // -----------------------------------------------------------
                     case 'sync_all':
                         $result = $sync->syncAll();
-                        $flash  = "Synced {$result['synced']} package(s) from Godmode.";
+                        $flash  = sprintf($t['bf_flash_synced_n'], $result['synced']);
                         if (!empty($result['errors'])) {
-                            $flash    .= ' Errors: ' . implode('; ', $result['errors']);
+                            $flash    .= sprintf($t['bf_flash_errors'], implode('; ', $result['errors']));
                             $flashType = 'warning';
                         } else {
                             $flashType = 'success';
@@ -258,64 +291,64 @@ function brandforge_output(array $vars): void
                         break;
 
                     case 'sync_single':
-                        brandforge_requirePackageId($packageId);
+                        brandforge_requirePackageId($packageId, $t);
                         $sync->syncSingle($packageId);
-                        $flash     = 'Package synced successfully.';
+                        $flash     = $t['bf_flash_package_synced'];
                         $flashType = 'success';
                         break;
 
                     case 'rebuild_mapping':
                         $result    = $sync->rebuildMapping();
-                        $flash     = "Mapping rebuilt — {$result['synced']} package(s) synced";
+                        $flash     = sprintf($t['bf_flash_mapping_rebuilt'], $result['synced']);
                         if (($result['reconnected'] ?? 0) > 0) {
-                            $flash .= ", {$result['reconnected']} existing product(s) re-linked";
+                            $flash .= sprintf($t['bf_flash_reconnected'], $result['reconnected']);
                         }
                         $flash    .= '.';
                         $flashType = 'success';
                         break;
 
                     case 'auto_create_product':
-                        brandforge_requirePackageId($packageId);
+                        brandforge_requirePackageId($packageId, $t);
                         $mapping = PackageRepository::findByGodmodeId($packageId);
                         if (!$mapping) {
-                            throw new \RuntimeException('Package not in local table. Run Sync All first.');
+                            throw new \RuntimeException($t['bf_flash_not_in_table']);
                         }
                         if (!empty($mapping->whmcs_product_id)) {
-                            throw new \RuntimeException('Package already has a linked WHMCS product.');
+                            throw new \RuntimeException($t['bf_flash_already_linked']);
                         }
                         $newId = WhmcsProductManager::createProduct(
                             $mapping->godmode_name,
                             $mapping->godmode_slug
                         );
                         PackageRepository::setWhmcsProduct($packageId, $newId);
-                        $flash     = 'WHMCS product #' . $newId . ' "' . $mapping->godmode_name . '" created and linked.';
+                        $flash     = sprintf($t['bf_flash_product_linked'], $newId, $mapping->godmode_name);
                         $flashType = 'success';
                         break;
 
                     case 'link_product':
-                        brandforge_requirePackageId($packageId);
+                        brandforge_requirePackageId($packageId, $t);
                         $whmcsId = (int) ($_POST['whmcs_product_id'] ?? 0);
                         if ($whmcsId <= 0) {
-                            throw new \RuntimeException('Please select a WHMCS product to link.');
+                            throw new \RuntimeException($t['bf_flash_select_product']);
                         }
                         PackageRepository::setWhmcsProduct($packageId, $whmcsId);
-                        $flash     = "Package linked to WHMCS product #{$whmcsId}.";
+                        $flash     = sprintf($t['bf_flash_linked_to'], $whmcsId);
                         $flashType = 'success';
                         break;
 
                     case 'unlink_product':
-                        brandforge_requirePackageId($packageId);
+                        brandforge_requirePackageId($packageId, $t);
                         PackageRepository::setWhmcsProduct($packageId, null);
-                        $flash     = 'Product link removed.';
+                        $flash     = $t['bf_flash_link_removed'];
                         $flashType = 'info';
                         break;
 
                     default:
-                        $flash     = 'Unknown action.';
+                        $flash     = $t['bf_flash_unknown_action'];
                         $flashType = 'warning';
                 }
             } catch (\Exception $e) {
-                $flash     = 'Error: ' . $e->getMessage();
+                $flash     = sprintf($t['bf_flash_error_prefix'], $e->getMessage());
                 $flashType = 'danger';
             }
         }
@@ -333,7 +366,7 @@ function brandforge_output(array $vars): void
         $whmcsProductMap[(int) $p->id] = $p->name;
     }
 
-    $lastSync    = 'Never';
+    $lastSync    = $t['bf_never'];
     $linkedCount = 0;
     if (!empty($mappings)) {
         $dates    = array_map(fn ($r) => $r->updated_at, $mappings);
@@ -348,6 +381,7 @@ function brandforge_output(array $vars): void
     $isFullySetUp = $server !== null && count($mappings) > 0;
 
     brandforge_renderPage(
+        $t,
         $moduleLink,
         $token,
         $flash,
@@ -368,14 +402,15 @@ function brandforge_output(array $vars): void
 // Render helpers
 // ---------------------------------------------------------------------------
 
-function brandforge_requirePackageId(string $id): void
+function brandforge_requirePackageId(string $id, array $t): void
 {
     if ($id === '') {
-        throw new \RuntimeException('No package ID supplied.');
+        throw new \RuntimeException($t['bf_flash_no_package_id']);
     }
 }
 
 function brandforge_renderPage(
+    array    $t,
     string   $moduleLink,
     string   $token,
     string   $flash,
@@ -508,15 +543,15 @@ function brandforge_renderPage(
 
         <!-- Header -->
         <div class="bf-header">
-            <h2>BrandForge &mdash; Package Sync</h2>
+            <h2><?= htmlspecialchars($t['bf_page_title']) ?></h2>
             <?php if ($isFullySetUp): ?>
             <div style="display:flex;gap:8px;align-items:center">
                 <form method="post" action="<?= $mlHtml ?>" style="display:inline">
                     <input type="hidden" name="token"  value="<?= $tkHtml ?>">
                     <input type="hidden" name="action" value="sync_all">
                     <button type="submit" class="btn btn-primary btn-sm bf-async-btn"
-                            data-loading-text="Syncing&hellip;">
-                        <i class="fas fa-sync-alt"></i>&nbsp; Sync Packages
+                            data-loading-text="<?= htmlspecialchars($t['bf_syncing']) ?>">
+                        <i class="fas fa-sync-alt"></i>&nbsp; <?= htmlspecialchars($t['bf_sync_packages']) ?>
                     </button>
                 </form>
                 <?php if ($pending > 0): ?>
@@ -524,8 +559,8 @@ function brandforge_renderPage(
                     <input type="hidden" name="token"  value="<?= $tkHtml ?>">
                     <input type="hidden" name="action" value="setup_all_products">
                     <button type="submit" class="btn btn-success btn-sm bf-async-btn"
-                            data-loading-text="Creating&hellip;">
-                        <i class="fas fa-magic"></i>&nbsp; Create All Products
+                            data-loading-text="<?= htmlspecialchars($t['bf_creating']) ?>">
+                        <i class="fas fa-magic"></i>&nbsp; <?= htmlspecialchars($t['bf_create_all_products']) ?>
                     </button>
                 </form>
                 <?php endif; ?>
@@ -533,8 +568,8 @@ function brandforge_renderPage(
                     <input type="hidden" name="token"  value="<?= $tkHtml ?>">
                     <input type="hidden" name="action" value="reset_all">
                     <button type="submit" class="btn btn-danger btn-sm"
-                            onclick="return confirm('This clears all package/service mapping data and removes the server record.\n\nYour WHMCS products are kept — re-running setup will re-link them without creating duplicates.\n\nContinue?')">
-                        <i class="fas fa-trash"></i>&nbsp; Reset Everything
+                            onclick="return confirm('<?= htmlspecialchars(addslashes($t['bf_reset_confirm'])) ?>')">
+                        <i class="fas fa-trash"></i>&nbsp; <?= htmlspecialchars($t['bf_reset_everything']) ?>
                     </button>
                 </form>
             </div>
@@ -553,25 +588,25 @@ function brandforge_renderPage(
         <div class="bf-status">
             <div class="bf-status-item">
                 <span class="dot <?= $hasCreds ? 'dot-ok' : 'dot-no' ?>"></span>
-                <span><strong>API Credentials</strong> <?= $hasCreds ? 'Saved' : 'Not set &mdash; save settings first' ?></span>
+                <span><strong><?= htmlspecialchars($t['bf_status_api_credentials']) ?></strong> <?= $hasCreds ? htmlspecialchars($t['bf_status_saved']) : htmlspecialchars($t['bf_status_not_set']) ?></span>
             </div>
             <span class="bf-status-sep">|</span>
             <div class="bf-status-item">
                 <span class="dot <?= $hasServer ? 'dot-ok' : 'dot-warn' ?>"></span>
-                <span><strong>Server Record</strong> <?= $hasServer ? 'Configured' : 'Not created' ?></span>
+                <span><strong><?= htmlspecialchars($t['bf_status_server_record']) ?></strong> <?= $hasServer ? htmlspecialchars($t['bf_status_configured']) : htmlspecialchars($t['bf_status_not_created']) ?></span>
             </div>
             <span class="bf-status-sep">|</span>
             <div class="bf-status-item">
                 <span class="dot <?= $hasPkgs ? 'dot-ok' : 'dot-warn' ?>"></span>
-                <span><strong>Packages</strong> <?= $total > 0 ? "{$total} synced" : 'Not synced' ?></span>
+                <span><strong><?= htmlspecialchars($t['bf_status_packages']) ?></strong> <?= $total > 0 ? $total . ' ' . htmlspecialchars($t['bf_status_synced']) : htmlspecialchars($t['bf_status_not_synced']) ?></span>
             </div>
             <span class="bf-status-sep">|</span>
             <div class="bf-status-item">
                 <span class="dot <?= $allLinked ? 'dot-ok' : ($linkedCount > 0 ? 'dot-warn' : 'dot-no') ?>"></span>
-                <span><strong>Products</strong>
-                    <?php if ($total === 0): ?>Not created
-                    <?php elseif ($allLinked): ?><?= $linkedCount ?> / <?= $total ?> ready
-                    <?php else: ?><?= $linkedCount ?> / <?= $total ?> linked
+                <span><strong><?= htmlspecialchars($t['bf_status_products']) ?></strong>
+                    <?php if ($total === 0): ?><?= htmlspecialchars($t['bf_status_not_created']) ?>
+                    <?php elseif ($allLinked): ?><?= $linkedCount ?> / <?= $total ?> <?= htmlspecialchars($t['bf_status_ready']) ?>
+                    <?php else: ?><?= $linkedCount ?> / <?= $total ?> <?= htmlspecialchars($t['bf_status_linked']) ?>
                     <?php endif; ?>
                 </span>
             </div>
@@ -580,26 +615,25 @@ function brandforge_renderPage(
         <?php if (!$isFullySetUp): ?>
         <!-- One-Click Setup Wizard -->
         <div class="bf-wizard">
-            <h3>&#x1F680; One-Click Setup</h3>
-            <p>Your API credentials are saved in the addon settings. Click the button below to configure everything automatically &mdash; no technical steps required.</p>
+            <h3><?= htmlspecialchars($t['bf_wizard_title']) ?></h3>
+            <p><?= htmlspecialchars($t['bf_wizard_intro']) ?></p>
             <ul>
-                <li>Creates a WHMCS server record using your API credentials</li>
-                <li>Pulls all your Godmode packages</li>
-                <li>Creates a WHMCS product for each package</li>
-                <li>Links all products to the BrandForge module, fully configured</li>
+                <li><?= htmlspecialchars($t['bf_wizard_step_server']) ?></li>
+                <li><?= htmlspecialchars($t['bf_wizard_step_pull']) ?></li>
+                <li><?= htmlspecialchars($t['bf_wizard_step_create']) ?></li>
+                <li><?= htmlspecialchars($t['bf_wizard_step_link']) ?></li>
             </ul>
             <?php if (!$hasCreds): ?>
                 <p style="background:rgba(255,255,255,.2);padding:10px 14px;border-radius:4px;margin-bottom:16px">
-                    &#x26A0;&#xFE0F; Please save your <strong>Godmode API URL</strong> and <strong>API Key</strong>
-                    in the addon settings (Configure button on the Addon Modules page) before running setup.
+                    &#x26A0;&#xFE0F; <?= $t['bf_wizard_need_creds'] ?>
                 </p>
-                <button class="btn-setup" disabled>Setup Unavailable &mdash; Save Credentials First</button>
+                <button class="btn-setup" disabled><?= htmlspecialchars($t['bf_wizard_unavailable']) ?></button>
             <?php else: ?>
-                <form id="bf-setup-form" method="post" action="<?= $mlHtml ?>">
+                <form id="bf-setup-form" method="post" action="<?= $mlHtml ?>" data-confirm="<?= htmlspecialchars($t['bf_wizard_confirm']) ?>">
                     <input type="hidden" name="token"  value="<?= $tkHtml ?>">
                     <input type="hidden" name="action" value="auto_setup">
                     <button type="submit" class="btn-setup">
-                        &#x1F680; Run One-Click Setup
+                        <?= htmlspecialchars($t['bf_wizard_run']) ?>
                     </button>
                 </form>
             <?php endif; ?>
@@ -609,12 +643,8 @@ function brandforge_renderPage(
         <!-- Next Steps after full setup -->
         <?php if ($allLinked): ?>
         <div class="bf-next">
-            <strong>&#x2705; Setup complete.</strong>
-            Add pricing to each product under
-            <strong>Products/Services &rarr; Products/Services &rarr; [Product] &rarr; Pricing</strong>,
-            then your customers can order.
-            When Godmode adds new packages, click <strong>Sync Packages</strong> then
-            <strong>Create All Products</strong>.
+            <strong><?= htmlspecialchars($t['bf_next_complete']) ?></strong>
+            <?= $t['bf_next_body'] ?>
         </div>
         <?php endif; ?>
 
@@ -622,34 +652,34 @@ function brandforge_renderPage(
         <div class="bf-stats">
             <div class="bf-stat">
                 <div class="bf-stat-val"><?= $total ?></div>
-                <div class="bf-stat-lbl">Total</div>
+                <div class="bf-stat-lbl"><?= htmlspecialchars($t['bf_stat_total']) ?></div>
             </div>
             <div class="bf-stat linked">
                 <div class="bf-stat-val"><?= $linkedCount ?></div>
-                <div class="bf-stat-lbl">Linked</div>
+                <div class="bf-stat-lbl"><?= htmlspecialchars($t['bf_stat_linked']) ?></div>
             </div>
             <div class="bf-stat pending">
                 <div class="bf-stat-val"><?= $pending ?></div>
-                <div class="bf-stat-lbl">Pending</div>
+                <div class="bf-stat-lbl"><?= htmlspecialchars($t['bf_stat_pending']) ?></div>
             </div>
         </div>
 
         <!-- Package table -->
         <?php if (empty($mappings)): ?>
             <div class="alert alert-info">
-                No packages synced yet. Click <strong>Sync Packages</strong> to pull from Godmode.
+                <?= $t['bf_table_no_packages'] ?>
             </div>
         <?php else: ?>
             <table class="table table-bordered table-striped table-hover" style="font-size:13px">
                 <thead>
                     <tr>
-                        <th>Package Name</th>
-                        <th>Plan ID <small class="text-muted">(for Godmode)</small></th>
-                        <th>Godmode ID</th>
-                        <th>Product ID <small class="text-muted">(for Godmode)</small></th>
-                        <th>WHMCS Product</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th><?= htmlspecialchars($t['bf_col_package_name']) ?></th>
+                        <th><?= htmlspecialchars($t['bf_col_plan_id']) ?> <small class="text-muted"><?= htmlspecialchars($t['bf_col_plan_id_note']) ?></small></th>
+                        <th><?= htmlspecialchars($t['bf_col_godmode_id']) ?></th>
+                        <th><?= htmlspecialchars($t['bf_col_product_id']) ?> <small class="text-muted"><?= htmlspecialchars($t['bf_col_product_id_note']) ?></small></th>
+                        <th><?= htmlspecialchars($t['bf_col_whmcs_product']) ?></th>
+                        <th><?= htmlspecialchars($t['bf_col_status']) ?></th>
+                        <th><?= htmlspecialchars($t['bf_col_actions']) ?></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -681,9 +711,9 @@ function brandforge_renderPage(
                         </td>
                         <td>
                             <?php if ($isLinked): ?>
-                                <span class="label label-success">Synced</span>
+                                <span class="label label-success"><?= htmlspecialchars($t['bf_status_synced_label']) ?></span>
                             <?php else: ?>
-                                <span class="label label-warning">Pending</span>
+                                <span class="label label-warning"><?= htmlspecialchars($t['bf_status_pending_label']) ?></span>
                             <?php endif; ?>
                         </td>
                         <td class="bf-actions-cell">
@@ -692,8 +722,8 @@ function brandforge_renderPage(
                                 <input type="hidden" name="token"      value="<?= $tkHtml ?>">
                                 <input type="hidden" name="action"     value="sync_single">
                                 <input type="hidden" name="package_id" value="<?= $gid ?>">
-                                <button type="submit" class="btn btn-xs btn-info" title="Re-pull this package from Godmode">
-                                    <i class="fas fa-sync"></i> Sync
+                                <button type="submit" class="btn btn-xs btn-info" title="<?= htmlspecialchars($t['bf_action_sync_title']) ?>">
+                                    <i class="fas fa-sync"></i> <?= htmlspecialchars($t['bf_action_sync']) ?>
                                 </button>
                             </form>
 
@@ -703,8 +733,8 @@ function brandforge_renderPage(
                                     <input type="hidden" name="token"      value="<?= $tkHtml ?>">
                                     <input type="hidden" name="action"     value="auto_create_product">
                                     <input type="hidden" name="package_id" value="<?= $gid ?>">
-                                    <button type="submit" class="btn btn-xs btn-success" title="Create a new WHMCS product and link it">
-                                        <i class="fas fa-plus-circle"></i> Auto Create
+                                    <button type="submit" class="btn btn-xs btn-success" title="<?= htmlspecialchars($t['bf_action_auto_create_title']) ?>">
+                                        <i class="fas fa-plus-circle"></i> <?= htmlspecialchars($t['bf_action_auto_create']) ?>
                                     </button>
                                 </form>
 
@@ -715,14 +745,14 @@ function brandforge_renderPage(
                                     <input type="hidden" name="package_id" value="<?= $gid ?>">
                                     <select name="whmcs_product_id" class="form-control input-sm"
                                             style="width:175px;display:inline-block">
-                                        <option value="">Link existing&hellip;</option>
+                                        <option value=""><?= htmlspecialchars($t['bf_action_link_placeholder']) ?></option>
                                         <?php foreach ($whmcsProducts as $p): ?>
                                             <option value="<?= (int) $p->id ?>">
                                                 <?= htmlspecialchars($p->name) ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
-                                    <button type="submit" class="btn btn-xs btn-primary">Link</button>
+                                    <button type="submit" class="btn btn-xs btn-primary"><?= htmlspecialchars($t['bf_action_link']) ?></button>
                                 </form>
 
                             <?php else: ?>
@@ -732,8 +762,8 @@ function brandforge_renderPage(
                                     <input type="hidden" name="action"     value="unlink_product">
                                     <input type="hidden" name="package_id" value="<?= $gid ?>">
                                     <button type="submit" class="btn btn-xs btn-danger"
-                                            onclick="return confirm('Remove product link for \'<?= htmlspecialchars(addslashes($row->godmode_name)) ?>\'?')">
-                                        <i class="fas fa-unlink"></i> Unlink
+                                            onclick="return confirm('<?= htmlspecialchars(addslashes(sprintf($t['bf_action_unlink_confirm'], $row->godmode_name))) ?>')">
+                                        <i class="fas fa-unlink"></i> <?= htmlspecialchars($t['bf_action_unlink']) ?>
                                     </button>
                                 </form>
                             <?php endif; ?>
@@ -746,8 +776,7 @@ function brandforge_renderPage(
 
         <hr>
         <p class="text-muted" style="font-size:11px">
-            <?= $total ?> package(s) in local mapping &mdash;
-            last updated: <?= htmlspecialchars($lastSync) ?>
+            <?= htmlspecialchars(sprintf($t['bf_mapping_footer'], $total, $lastSync)) ?>
         </p>
         <?php endif; ?>
 
@@ -757,15 +786,15 @@ function brandforge_renderPage(
     <div id="bf-overlay">
         <div class="bf-overlay-box">
             <div class="bf-spinner"></div>
-            <div class="bf-overlay-title">Setting up BrandForge&hellip;</div>
-            <div class="bf-overlay-sub">This takes about 10&ndash;30 seconds. Please do not close this page.</div>
+            <div class="bf-overlay-title"><?= htmlspecialchars($t['bf_overlay_title']) ?></div>
+            <div class="bf-overlay-sub"><?= htmlspecialchars($t['bf_overlay_sub']) ?></div>
             <ul class="bf-steps">
-                <li><span class="bf-step-icon"></span> Connecting to Godmode API</li>
-                <li><span class="bf-step-icon"></span> Creating server record</li>
-                <li><span class="bf-step-icon"></span> Syncing packages from Godmode</li>
-                <li><span class="bf-step-icon"></span> Creating WHMCS products</li>
+                <li><span class="bf-step-icon"></span> <?= htmlspecialchars($t['bf_overlay_step1']) ?></li>
+                <li><span class="bf-step-icon"></span> <?= htmlspecialchars($t['bf_overlay_step2']) ?></li>
+                <li><span class="bf-step-icon"></span> <?= htmlspecialchars($t['bf_overlay_step3']) ?></li>
+                <li><span class="bf-step-icon"></span> <?= htmlspecialchars($t['bf_overlay_step4']) ?></li>
             </ul>
-            <p class="bf-overlay-note">You will be redirected automatically when setup completes.</p>
+            <p class="bf-overlay-note"><?= htmlspecialchars($t['bf_overlay_note']) ?></p>
         </div>
     </div>
 
@@ -778,7 +807,7 @@ function brandforge_renderPage(
         if (setupForm) {
             setupForm.addEventListener('submit', function (e) {
                 e.preventDefault();
-                if (!confirm('This will create a server record, sync packages, and auto-create WHMCS products. Ready to go?')) {
+                if (!confirm(setupForm.getAttribute('data-confirm'))) {
                     return;
                 }
                 overlay.style.display = 'flex';
