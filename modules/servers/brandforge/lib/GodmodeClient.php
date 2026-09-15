@@ -186,8 +186,21 @@ class GodmodeClient
         // Unsetting the handle releases the resource immediately on all versions.
         unset($ch);
 
-        // Log every call regardless of outcome
-        $this->logger->logApiCall($action, $this->sanitizePayload($payload), $rawResponse, [$this->apiKey]);
+        // Log every call regardless of outcome. Two independent redaction
+        // layers, deliberately not relying on just one:
+        //  1. sanitizePayload() replaces sensitive VALUES in the logged
+        //     request array itself (e.g. 'password' => '***REDACTED***').
+        //  2. $replacements is WHMCS's own logModuleCall() masking — it
+        //     scrubs the literal secret value wherever it appears in EITHER
+        //     the request or the raw response text, which (1) alone can't
+        //     do (e.g. if an error response ever happened to echo a field
+        //     back). The API key was already covered this way; any payload
+        //     carrying a password gets the same treatment.
+        $replacements = [$this->apiKey];
+        if (!empty($payload['password'])) {
+            $replacements[] = $payload['password'];
+        }
+        $this->logger->logApiCall($action, $this->sanitizePayload($payload), $rawResponse, $replacements);
 
         if ($curlErrno === CURLE_OPERATION_TIMEDOUT) {
             throw new GodmodeTimeoutException("Request timed out for action: {$action}", 0);
@@ -216,9 +229,23 @@ class GodmodeClient
 
     /**
      * Replace sensitive values so they don't appear in WHMCS logs.
+     *
+     * Previously a no-op despite the docblock's promise — logApiCall() below
+     * fires unconditionally on every request (not gated behind debug mode),
+     * so this was the only thing standing between a sensitive field and a
+     * permanent, plaintext entry in Admin → Utilities → Logs → Module Log.
+     * Extend $sensitiveKeys if a future payload ever carries another secret.
      */
     private function sanitizePayload(array $payload): array
     {
+        $sensitiveKeys = ['password'];
+
+        foreach ($sensitiveKeys as $key) {
+            if (array_key_exists($key, $payload) && $payload[$key] !== '') {
+                $payload[$key] = '***REDACTED***';
+            }
+        }
+
         return $payload;
     }
 }

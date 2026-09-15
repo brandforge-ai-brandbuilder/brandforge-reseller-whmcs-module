@@ -34,6 +34,14 @@ class Mapper
             'last_name'         => $client['lastname']     ?? '',
             'company_name'      => $client['companyname']  ?? '',
             'plan_code'         => $planCode,
+            // The client's WHMCS account password, passed through so Godmode
+            // can provision the BrandForge account with matching credentials.
+            // WHMCS decrypts and populates this for provisioning modules —
+            // see $params['password'] in the module-parameters reference.
+            // GodmodeClient::sanitizePayload() + the logModuleCall replacement
+            // list both redact this specific value before it ever reaches the
+            // WHMCS Module Log — see GodmodeClient::request().
+            'password'          => (string) ($params['password'] ?? ''),
             // Round-tripped so Godmode can build a WHMCS deep link (e.g. the
             // Settings → Billing upgrade/downgrade URL) without ever needing
             // to reach into the reseller's WHMCS database itself.
