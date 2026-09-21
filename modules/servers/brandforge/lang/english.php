@@ -71,4 +71,9 @@ return [
     'launch_failed'         => 'Launch failed',
     'launch_failed_body'    => 'We could not generate a secure login link for your account. Please try again or contact support.',
     'go_back'               => '← Go back',
+
+    // Pending upgrade banner
+    'upgrade_pending_pay'        => 'Your upgrade to %1$s is waiting for payment. Pay invoice #%2$s to activate it.',
+    'upgrade_pending_processing' => 'Your upgrade to %s is being processed.',
+    'pay_invoice'                => 'Pay invoice →',
 ];

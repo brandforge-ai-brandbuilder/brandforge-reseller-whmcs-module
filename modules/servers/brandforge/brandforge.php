@@ -21,6 +21,7 @@ require_once $libDir . 'Logger.php';
 require_once $libDir . 'GodmodeClient.php';
 require_once $libDir . 'Mapper.php';
 require_once $libDir . 'PackageLookup.php';
+require_once $libDir . 'PendingUpgrade.php';
 require_once $libDir . 'ServiceRepository.php';
 require_once $libDir . 'SsoHandler.php';
 require_once $libDir . 'Translator.php';
@@ -29,6 +30,7 @@ use BrandForge\GodmodeClient;
 use BrandForge\Logger;
 use BrandForge\Mapper;
 use BrandForge\PackageLookup;
+use BrandForge\PendingUpgrade;
 use BrandForge\ServiceRepository;
 use BrandForge\SsoHandler;
 use BrandForge\Translator;
@@ -594,6 +596,18 @@ function brandforge_ClientArea(array $params): array
     $packageName = PackageLookup::packageName((int) $service->whmcs_product_id)
                   ?? ($params['product']['name'] ?? 'BrandForge Plan');
 
+    $upgradeNotice = '';
+    $upgradeInvoiceUrl = '';
+    $pending = PendingUpgrade::forService($serviceId);
+    if ($pending !== null) {
+        if ($pending['invoice_id'] > 0) {
+            $upgradeNotice     = sprintf($t['upgrade_pending_pay'], $pending['package_name'], $pending['invoice_ref']);
+            $upgradeInvoiceUrl = 'viewinvoice.php?id=' . $pending['invoice_id'];
+        } else {
+            $upgradeNotice = sprintf($t['upgrade_pending_processing'], $pending['package_name']);
+        }
+    }
+
     // Pre-generate SSO URL so the Launch button is a direct link in the template.
     $ssoUrl      = '';
     $ssoError    = '';
@@ -648,6 +662,8 @@ function brandforge_ClientArea(array $params): array
         'workspace_id'       => (string) ($service->godmode_workspace_id  ?? ''),
         'sso_url'            => $ssoUrl,
         'sso_error'          => $ssoError,
+        'upgrade_notice'      => $upgradeNotice,
+        'upgrade_invoice_url' => $upgradeInvoiceUrl,
         'created_at'         => (string) ($service->created_at ?? ''),
         'has_usage_data'     => ($serviceInfo !== null),
         'lang_credits_used_of'    => $langCreditsUsedOf,

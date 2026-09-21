@@ -365,6 +365,17 @@
     {/if}
   </div>
 
+  {* ── Pending upgrade notice ───────────────────────────── *}
+  {if $upgrade_notice}
+  <div class="bf-alert bf-alert--warn">
+    <span class="bf-alert-icon">⏳</span>
+    <div>
+      {$upgrade_notice|escape}
+      {if $upgrade_invoice_url}<br><a href="{$upgrade_invoice_url|escape}"><strong>{$lang.pay_invoice|escape}</strong></a>{/if}
+    </div>
+  </div>
+  {/if}
+
   {* ── Info grid ────────────────────────────────────────── *}
   <div class="bf-grid">
 
