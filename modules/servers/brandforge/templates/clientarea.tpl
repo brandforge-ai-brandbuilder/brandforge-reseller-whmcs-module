@@ -554,7 +554,6 @@
 
   <div class="bf-footer">
     {$lang_powered_by|escape}
-    {if $subscription_id} &mdash; <span style="font-family:monospace">{$subscription_id|truncate:20:'…':true|escape}</span>{/if}
   </div>
 
 {else}

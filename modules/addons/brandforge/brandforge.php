@@ -437,8 +437,7 @@ function brandforge_renderPage(
     ?>
     <style>
         /* ---- layout ---- */
-        .bf-header   { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
-        .bf-header h2{ margin:0; font-size:20px; }
+        .bf-header   { display:flex; align-items:center; justify-content:flex-end; margin-bottom:18px; }
 
         /* ---- status bar ---- */
         .bf-status   { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
@@ -543,7 +542,6 @@ function brandforge_renderPage(
 
         <!-- Header -->
         <div class="bf-header">
-            <h2><?= htmlspecialchars($t['bf_page_title']) ?></h2>
             <?php if ($isFullySetUp): ?>
             <div style="display:flex;gap:8px;align-items:center">
                 <form method="post" action="<?= $mlHtml ?>" style="display:inline">

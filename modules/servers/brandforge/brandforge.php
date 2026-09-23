@@ -236,6 +236,23 @@ function brandforge_ConfigOptions(): array
                            . 'Leave blank for a regular product (its mapping comes from BrandForge Package '
                            . 'Sync instead).',
         ],
+        // Also appended last (see the comment above) — kept deliberately
+        // separate from "Brand Name". Brand Name is the PRODUCT'S name as
+        // shown to the customer (header title, "Launch %s" button, SSO page
+        // text) — e.g. a reseller might call the product itself
+        // "BrandBuilder". "Powered By Name" is who the customer buys FROM
+        // (the reseller's own company name) and only ever appears in the
+        // dashboard footer's "Powered by %s" line — e.g. "CloudHosti". Left
+        // blank, the footer falls back to Brand Name, so existing setups
+        // that never set this keep behaving exactly as before.
+        'Powered By Name' => [
+            'Type'        => 'text',
+            'Size'        => 40,
+            'Default'     => '',
+            'Description' => 'Reseller/company name shown in the dashboard footer\'s "Powered by" line '
+                           . '(e.g. your own company name, distinct from the product name set in Brand '
+                           . 'Name). Leave blank to reuse Brand Name.',
+        ],
     ];
 }
 
@@ -618,7 +635,8 @@ function brandforge_ClientArea(array $params): array
     $serviceId = (int) ($params['serviceid'] ?? 0);
     $service   = ServiceRepository::findByServiceId($serviceId);
 
-    $brandName = trim((string) ($params['configoption4'] ?? '')) ?: 'BrandForge';
+    $brandName    = trim((string) ($params['configoption4'] ?? '')) ?: 'BrandForge';
+    $poweredByName = trim((string) ($params['configoption10'] ?? '')) ?: $brandName;
     $t         = Translator::strings((string) ($params['configoption8'] ?? 'english'));
 
     // Base vars available to both provisioned and unprovisioned states.
@@ -632,7 +650,7 @@ function brandforge_ClientArea(array $params): array
                                    ?: ($params['configoption5'] ?? '#6366f1'),
         'lang'           => $t,
         'lang_launch'          => sprintf($t['launch'], $brandName),
-        'lang_powered_by'      => sprintf($t['powered_by'], $brandName),
+        'lang_powered_by'      => sprintf($t['powered_by'], $poweredByName),
         'lang_workspace_note'  => sprintf($t['workspace_note'], $brandName),
         'lang_being_set_up'    => sprintf($t['being_set_up'], $brandName),
         'lang_status_pending'  => $t['status_pending'],
