@@ -63,16 +63,36 @@ function brandforge_buildClient(array $params): GodmodeClient
 }
 
 /**
- * Resolve the Godmode plan slug (plan_code) for a WHMCS product ID.
- * Returns null and populates $error when no mapping exists.
+ * Manual "Godmode Plan Code (Addons only)" override — configoption9. Only
+ * ever set on a WHMCS Addon, where Package Sync has no mapping to offer
+ * (see the config.json comment above configoption9's definition). Returns
+ * '' when unset, so every caller can treat it as "fall through to
+ * PackageLookup" with a single ?: / === '' check.
  */
-function brandforge_resolvePlanCode(int $whmcsProductId, string &$error): ?string
+function brandforge_planCodeOverride(array $params): string
 {
+    return trim((string) ($params['configoption9'] ?? ''));
+}
+
+/**
+ * Resolve the Godmode plan slug (plan_code) for a WHMCS product ID: the
+ * manual addon override first, then the Package Sync mapping.
+ * Returns null and populates $error when neither is set.
+ */
+function brandforge_resolvePlanCode(int $whmcsProductId, array $params, string &$error): ?string
+{
+    $override = brandforge_planCodeOverride($params);
+    if ($override !== '') {
+        return $override;
+    }
+
     $planCode = PackageLookup::packageSlug($whmcsProductId);
 
     if ($planCode === null) {
         $error = 'WHMCS product #' . $whmcsProductId . ' is not linked to a Godmode package. '
-               . 'Open BrandForge Package Sync, link or auto-create the product, then retry.';
+               . 'Open BrandForge Package Sync, link or auto-create the product, then retry — or, if this '
+               . 'is a WHMCS Addon (Package Sync cannot map those), set "Godmode Plan Code (Addons only)" '
+               . 'in its Module Settings.';
     }
 
     return $planCode;
@@ -191,6 +211,31 @@ function brandforge_ConfigOptions(): array
             'Default'     => 'english',
             'Description' => 'Language for the client-area dashboard and SSO launch page text. AI-drafted first pass for non-English options — recommend native-speaker review before relying on them.',
         ],
+        // Added last, deliberately — WHMCS ConfigOptions() are POSITIONAL
+        // (code reads $params['configoption1'], 'configoption2', … by
+        // index, not by this label). Inserting a new field anywhere before
+        // the end would silently shift every configoptionN index below it,
+        // scrambling the stored values on every product/addon already
+        // configured. New fields must always be appended at the end — see
+        // configoption9 in brandforge_resolvePlanCode() below.
+        //
+        // Manual override for the Godmode plan_code. Package Sync's
+        // mod_brandforge_packages mapping only ever links Godmode plans to
+        // regular WHMCS Products (tblproducts) — WHMCS Product Addons live
+        // in a separate table (tbladdons) that Package Sync never touches,
+        // so an addon has no synced mapping to fall back on. Leave this
+        // blank on a regular product (PackageLookup handles it); set it on
+        // an addon so brandforge_resolvePlanCode() has something to resolve.
+        'Godmode Plan Code (Addons only)' => [
+            'Type'        => 'text',
+            'Size'        => 30,
+            'Default'     => '',
+            'Description' => 'Only needed when this module is assigned to a WHMCS Addon rather than a '
+                           . 'regular Product — Package Sync cannot map addons automatically. Enter the '
+                           . 'exact plan_code slug from Godmode\'s package list (Provisioning &gt; Packages). '
+                           . 'Leave blank for a regular product (its mapping comes from BrandForge Package '
+                           . 'Sync instead).',
+        ],
     ];
 }
 
@@ -222,7 +267,7 @@ function brandforge_CreateAccount(array $params): string
 
         $whmcsProductId = (int) ($params['pid'] ?? 0);
         $error          = '';
-        $planCode       = brandforge_resolvePlanCode($whmcsProductId, $error);
+        $planCode       = brandforge_resolvePlanCode($whmcsProductId, $params, $error);
 
         if ($planCode === null) {
             return $error;
@@ -363,7 +408,8 @@ function brandforge_SuspendAccount(array $params): string
 
         // Always plan-scoped — this WHMCS service is always exactly one
         // specific package, whether or not the client holds others.
-        $planCode = PackageLookup::packageSlug((int) $service->whmcs_product_id);
+        $override = brandforge_planCodeOverride($params);
+        $planCode = $override !== '' ? $override : PackageLookup::packageSlug((int) $service->whmcs_product_id);
         if ($planCode === null) {
             return brandforge_unlinkedProductError((int) $service->whmcs_product_id);
         }
@@ -398,7 +444,8 @@ function brandforge_UnsuspendAccount(array $params): string
             return $error;
         }
 
-        $planCode = PackageLookup::packageSlug((int) $service->whmcs_product_id);
+        $override = brandforge_planCodeOverride($params);
+        $planCode = $override !== '' ? $override : PackageLookup::packageSlug((int) $service->whmcs_product_id);
         if ($planCode === null) {
             return brandforge_unlinkedProductError((int) $service->whmcs_product_id);
         }
@@ -439,7 +486,8 @@ function brandforge_TerminateAccount(array $params): string
             return $error;
         }
 
-        $planCode = PackageLookup::packageSlug((int) $service->whmcs_product_id);
+        $override = brandforge_planCodeOverride($params);
+        $planCode = $override !== '' ? $override : PackageLookup::packageSlug((int) $service->whmcs_product_id);
         if ($planCode === null) {
             return brandforge_unlinkedProductError((int) $service->whmcs_product_id);
         }
@@ -495,13 +543,14 @@ function brandforge_ChangePackage(array $params): string
             return $error;
         }
 
-        $oldPlanCode = PackageLookup::packageSlug((int) $service->whmcs_product_id);
+        $override    = brandforge_planCodeOverride($params);
+        $oldPlanCode = $override !== '' ? $override : PackageLookup::packageSlug((int) $service->whmcs_product_id);
         if ($oldPlanCode === null) {
             return brandforge_unlinkedProductError((int) $service->whmcs_product_id);
         }
 
         $newProductId = (int) ($params['pid'] ?? 0);
-        $newPlanCode  = brandforge_resolvePlanCode($newProductId, $error);
+        $newPlanCode  = brandforge_resolvePlanCode($newProductId, $params, $error);
 
         if ($newPlanCode === null) {
             return $error;
